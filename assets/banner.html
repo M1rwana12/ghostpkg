@@ -1,0 +1,53 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{width:1280px;height:640px;overflow:hidden;background:#0D1117;
+       font-family:'JetBrains Mono',ui-monospace,Consolas,monospace;
+       display:grid;grid-template-columns:1fr 1fr;align-items:center;
+       gap:52px;padding:0 76px;position:relative}
+  body::before{content:'';position:absolute;bottom:-260px;left:-180px;width:760px;height:760px;
+    background:radial-gradient(circle,rgba(167,139,250,.20) 0%,transparent 66%)}
+  .left{position:relative;z-index:2}
+  .kicker{font-size:15px;color:#A78BFA;letter-spacing:3px;text-transform:uppercase;margin-bottom:20px}
+  .name{font-size:76px;font-weight:700;color:#E6EDF3;letter-spacing:-3.5px;line-height:1;margin-bottom:24px}
+  .name b{color:#A78BFA}
+  .tag{font-size:23px;color:#8B949E;line-height:1.55;margin-bottom:32px}
+  .tag em{color:#E6EDF3;font-style:normal}
+  .stats{display:flex;gap:30px}
+  .stat .n{font-size:32px;color:#E6EDF3;font-weight:700;line-height:1}
+  .stat .n.v{color:#A78BFA}
+  .stat .l{font-size:13px;color:#6E7681;margin-top:7px;letter-spacing:.4px}
+  .right{position:relative;z-index:2}
+  .card{background:#161B22;border:1px solid #30363D;border-radius:12px;padding:24px 22px;
+        box-shadow:0 22px 55px rgba(0,0,0,.55)}
+  .row{display:flex;align-items:flex-start;gap:12px;padding:11px 0;font-size:17px}
+  .row+.row{border-top:1px solid rgba(48,54,61,.65)}
+  .lbl{font-weight:700;flex-shrink:0;width:86px}
+  .lbl.b{color:#F85149}.lbl.w{color:#D29922}.lbl.o{color:#3FB950}
+  .stat .n.o{color:#3FB950}
+  .pkg{color:#E6EDF3;word-break:break-all}
+  .sub{color:#6E7681;font-size:14px;margin-top:4px}
+</style></head><body>
+  <div class="left">
+    <div class="kicker">supply-chain guard</div>
+    <div class="name">ghost<b>pkg</b></div>
+    <div class="tag">Your AI invents a package name.<br>An attacker registered it <em>last week.</em></div>
+    <div class="stats">
+      <div class="stat"><div class="n v">205,474</div><div class="l">hallucinated names</div></div>
+      <div class="stat"><div class="n">43%</div><div class="l">repeat every run</div></div>
+      <div class="stat"><div class="n o">0</div><div class="l">dependencies</div></div>
+    </div>
+  </div>
+  <div class="right">
+    <div class="card">
+      <div class="row"><div class="lbl b">BLOCKED</div>
+        <div><div class="pkg">requests-async-helper-sdk</div><div class="sub">does not exist on pypi</div></div></div>
+      <div class="row"><div class="lbl w">WARNING</div>
+        <div><div class="pkg">react-router-dom-utils</div><div class="sub">published 176 days ago · one release</div></div></div>
+      <div class="row"><div class="lbl o">ok</div>
+        <div><div class="pkg">numpy</div><div class="sub">136 releases · 19.8y old</div></div></div>
+    </div>
+  </div>
+</body></html>

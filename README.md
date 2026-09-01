@@ -1,21 +1,42 @@
-# ghostpkg
+<div align="center">
 
-**Catch package names that don't exist before you install them.**
+<img src="assets/banner.png" alt="ghostpkg" width="100%">
 
-[![CI](https://github.com/m1rwana12/ghostpkg/actions/workflows/ci.yml/badge.svg)](https://github.com/m1rwana12/ghostpkg/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/ghostpkg.svg)](https://pypi.org/project/ghostpkg/)
-[![Python](https://img.shields.io/pypi/pyversions/ghostpkg.svg)](https://pypi.org/project/ghostpkg/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Dependencies: 0](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](pyproject.toml)
+<h1>ghostpkg</h1>
 
-Language models invent package names. A study of ~200,000 code-generation
-prompts found **205,474 unique hallucinated package names**, and **43% of those
-hallucinations reappeared in all ten reruns of the same prompt** — which makes
-them predictable enough for an attacker to register in advance. That attack has
-a name now: *slopsquatting*.
+**Зупиняє встановлення пакетів, яких не існує.**
 
-`ghostpkg` checks names against the real registry before anything gets
-installed.
+Мовні моделі вигадують назви бібліотек. Зловмисники реєструють ці назви наперед.
+`ghostpkg` перевіряє назву в реальному реєстрі — до того, як `pip` або `npm` щось завантажать.
+
+[English](README.en.md) · **Українська**
+
+[![CI](https://github.com/M1rwana12/ghostpkg/actions/workflows/ci.yml/badge.svg)](https://github.com/M1rwana12/ghostpkg/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/ghostpkg.svg?color=A78BFA)](https://pypi.org/project/ghostpkg/)
+[![Python](https://img.shields.io/pypi/pyversions/ghostpkg.svg?color=A78BFA)](https://pypi.org/project/ghostpkg/)
+[![Залежності](https://img.shields.io/badge/%D0%B7%D0%B0%D0%BB%D0%B5%D0%B6%D0%BD%D0%BE%D1%81%D1%82%D0%B5%D0%B9-0-3FB950.svg)](pyproject.toml)
+[![Ліцензія](https://img.shields.io/badge/%D0%BB%D1%96%D1%86%D0%B5%D0%BD%D0%B7%D1%96%D1%8F-MIT-8B949E.svg)](LICENSE)
+
+</div>
+
+---
+
+## Проблема
+
+Дослідження ~200 000 запитів на генерацію коду виявило **205 474 унікальні вигадані назви пакетів**.
+Найгірше не це, а ось що:
+
+> **43 % галюцинацій повторювалися в усіх десяти повторних запусках того самого запиту.**
+
+Тобто вони **передбачувані**. Зловмисник може заздалегідь дізнатися, що саме вигадає модель,
+зареєструвати цю назву в PyPI чи npm — і чекати. Коли ваш агент упевнено напише
+`pip install fastapi-middleware`, пакет там **уже буде**.
+
+Атака має назву — **slopsquatting**.
+
+---
+
+## Рішення
 
 ```console
 $ ghostpkg check requests-async-helper-sdk numpy
@@ -27,59 +48,85 @@ $ ghostpkg check requests-async-helper-sdk numpy
   1 blocked: requests-async-helper-sdk
 ```
 
-Exit code is `1` when something is blocked, so it drops straight into CI or a
-pre-install hook.
+Код виходу — `1`, якщо щось заблоковано. Тому інструмент без переробок стає на місце
+в CI або в хук перед встановленням.
 
-## Install
+---
+
+## Встановлення
 
 ```bash
-pip install ghostpkg      # or: uvx ghostpkg, pipx install ghostpkg
+pip install ghostpkg
 ```
 
-Zero runtime dependencies, standard library only. A supply-chain security tool
-that drags in a dependency tree isn't much of a security tool.
-
-## Use
+<details>
+<summary>Інші способи</summary>
 
 ```bash
-# check names directly
+uvx ghostpkg check requests      # запустити без встановлення
+pipx install ghostpkg            # ізольовано, глобальна команда
+```
+
+</details>
+
+> [!NOTE]
+> **Нуль залежностей.** Тільки стандартна бібліотека Python.
+> Інструмент безпеки ланцюга постачання, який сам тягне за собою дерево залежностей, —
+> сумнівна ідея. Тут його немає.
+
+---
+
+## Використання
+
+```bash
+# перевірити конкретні назви
 ghostpkg check fastapi-middleware pandas-utils
 
-# check an npm name
+# перевірити назву в npm
 ghostpkg check react-router-dom-utils -e npm
 
-# check every dependency in a manifest
+# перевірити всі залежності з маніфесту
 ghostpkg scan requirements.txt
 ghostpkg scan package.json
 
-# machine-readable
+# машинозчитуваний вивід
 ghostpkg check somepkg --json
 ```
 
-## What it actually checks
-
-| Signal | Meaning |
+| Прапорець | Призначення |
 |---|---|
-| Not in the registry | **Blocked.** The name is a ghost — nothing to install. |
-| Published days ago | Warning. Attackers register fast — but so do honest authors. |
-| One release only | Warning. |
-| No repository or homepage | Warning. |
-| One or two characters from a popular name, *and* recently published | Warning. Possible typosquat. |
+| `-e`, `--ecosystem` | `pypi` (типово) або `npm` |
+| `--strict` | Підвищує попередження до блокувань |
+| `--json` | Вивід у JSON для скриптів і CI |
+| `-q`, `--quiet` | Ховає пакети, які пройшли перевірку |
 
-## Why it doesn't block on "suspicious", and why that matters
+---
 
-The obvious design is to score packages and block anything that looks shady.
-I built that first and measured it against the live PyPI feed. It flagged
-**100% of legitimate packages published that day.**
+## Що саме перевіряється
 
-That result is not a tuning problem, it's the shape of the data: a malicious
-slopsquat registered three days ago and an honest new library published three
-days ago are *the same package* from the outside. Both are young, both have one
-release, both often lack a repository link.
+| Сигнал | Вердикт |
+|---|---|
+| Немає в реєстрі | 🔴 **Заблоковано.** Назва — привид, встановлювати нічого. |
+| Опубліковано днями тому | 🟡 Попередження. Зловмисники реєструють швидко — але й чесні автори теж. |
+| Лише один реліз | 🟡 Попередження. |
+| Немає посилання на репозиторій | 🟡 Попередження. |
+| За один-два символи від популярної назви **і** свіжий | 🟡 Попередження. Схоже на typosquat. |
 
-So `ghostpkg` blocks on exactly one signal — **the package does not exist** —
-because that one is precise, and it's the one that actually corresponds to a
-hallucination. Everything softer is a warning for a human to read.
+---
+
+## Чому він **не** блокує «підозріле»
+
+Очевидний підхід — нарахувати пакету бали ризику й блокувати все сумнівне.
+Я спершу зробив саме так і **виміряв результат на живій стрічці свіжих публікацій PyPI**.
+
+> Ця версія позначила **100 % легітимних пакетів**, опублікованих того дня.
+
+Це не проблема налаштування порогів, це форма самих даних. Шкідливий slopsquat,
+зареєстрований три дні тому, і чесна нова бібліотека, опублікована три дні тому, —
+**ззовні той самий пакет**. Обидва молоді, обидва з одним релізом, обидва часто без репозиторію.
+
+Тому `ghostpkg` блокує рівно за одним сигналом — **пакета не існує**. Він точний,
+і саме він відповідає власне галюцинації. Усе м'якше — попередження для людини.
 
 ```console
 $ ghostpkg check react-router-dom-utils -e npm
@@ -90,49 +137,65 @@ $ ghostpkg check react-router-dom-utils -e npm
            - no repository or homepage link
 ```
 
-If you want the aggressive behaviour, `--strict` promotes warnings to blocks.
-It is not the default, and it will flag real packages.
+Якщо потрібна агресивна поведінка — `--strict` підвищує попередження до блокувань.
+Це не типова поведінка, і вона **ловитиме справжні пакети**.
 
-## Why not X?
+---
 
-| | ghostpkg | Registry-scanning SCA (Snyk, Socket) | `pip install` alone |
-|---|---|---|---|
-| Catches a name that doesn't exist | **yes, before install** | after install / in a PR | no |
-| Runs offline of any account | **yes** | account required | — |
-| Runtime dependencies | **0** | many | — |
-| Blocks legitimate new packages | **no** | varies | — |
-| npm + PyPI in one tool | **yes** | yes | no |
+## Порівняння
 
-`ghostpkg` is deliberately narrow. It does not scan code, detect malware, or
-replace an SCA product. It answers one question well.
+| | `ghostpkg` | SCA-сканери (Snyk, Socket) | Просто `pip install` |
+|---|:---:|:---:|:---:|
+| Ловить неіснуючу назву | ✅ **до встановлення** | після встановлення / у PR | ❌ |
+| Працює без облікового запису | ✅ | ❌ | — |
+| Залежностей під час виконання | **0** | багато | — |
+| Блокує легітимні нові пакети | ❌ **ні** | по-різному | — |
+| PyPI + npm в одному інструменті | ✅ | ✅ | ❌ |
 
-## Honest limitations
+`ghostpkg` навмисно вузький. Він не сканує код, не шукає шкідливе ПЗ
+і не замінює SCA-продукт. Він добре відповідає на одне питання.
 
-- **The hard case is out of scope today.** A hallucinated name that an attacker
-  has *already registered* will pass the existence check. The warning signals
-  are what stand between you and that, and they are advisory. Improving this is
-  the main open problem — see [issues](https://github.com/m1rwana12/ghostpkg/issues).
-- Typo detection compares against the 2,000 most-downloaded PyPI projects, so a
-  squat on a less popular package won't be flagged as a lookalike.
-- npm scoped packages (`@scope/name`) are checked, but the popular-name list is
-  PyPI-derived, so npm typosquat detection is weaker.
-- Every check is a live registry request. No caching yet.
+---
 
-## Prior art and credit
+## Чесні обмеження
 
-The scale of the problem was established by Spracklen et al., *"We Have a
-Package for You! A Comprehensive Analysis of Package Hallucinations by Code
-Generating LLMs"* (USENIX Security 2025).
+> [!WARNING]
+> **Складний випадок поки поза межами інструменту.** Вигадану назву, яку зловмисник
+> **уже зареєстрував**, перевірка існування пропустить. Між вами й нею стоять лише
+> попередження, і вони дорадчі. Це головна відкрита проблема —
+> див. [issues](https://github.com/M1rwana12/ghostpkg/issues).
 
-Those authors deliberately **did not publish** their list of hallucinated
-package names, because such a list is a ready-made target list for attackers.
-`ghostpkg` follows that decision and ships no corpus of hallucinated names —
-it checks names live instead.
+- Виявлення опечаток порівнює з 2 000 найпопулярніших проєктів PyPI, тому підробка
+  під менш популярний пакет як схожа назва не позначиться.
+- Пакети npm з областю (`@scope/name`) перевіряються, але список популярних назв
+  побудований на PyPI — тож для npm виявлення опечаток слабше.
+- Кожна перевірка — це живий запит до реєстру. Кешування ще немає.
 
-## Contributing
+---
 
-Issues and PRs welcome. `pip install -e ".[dev]" && pytest`.
+## Джерела та подяки
 
-## License
+Масштаб проблеми встановили Spracklen та ін., *«We Have a Package for You!
+A Comprehensive Analysis of Package Hallucinations by Code Generating LLMs»*
+([USENIX Security 2025](https://www.usenix.org/conference/usenixsecurity25)).
 
-MIT
+Ці автори **свідомо не опублікували** свій список вигаданих назв — бо такий список
+є готовим переліком цілей для зловмисника. `ghostpkg` дотримується того самого рішення
+й **не постачає жодного корпусу галюцинацій**: він перевіряє назви наживо.
+
+---
+
+## Внесок
+
+Issues і pull requests вітаються.
+
+```bash
+git clone https://github.com/M1rwana12/ghostpkg
+cd ghostpkg
+pip install -e ".[dev]"
+pytest
+```
+
+## Ліцензія
+
+[MIT](LICENSE)

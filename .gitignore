@@ -61,3 +61,9 @@ scratch/
 # Internal planning document -- deliberately not published.
 # It is the portfolio strategy doc, not part of this tool.
 PLAN.md
+
+# Playwright MCP scratch output
+.playwright-mcp/
+
+# Banner art-direction options (working files, not shipped)
+banner-options/
