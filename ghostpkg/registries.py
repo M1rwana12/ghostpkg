@@ -6,6 +6,7 @@ so this module deliberately uses urllib rather than requests.
 
 from __future__ import annotations
 
+import gzip
 import json
 import urllib.error
 import urllib.parse
@@ -15,6 +16,10 @@ from datetime import datetime, timezone
 
 USER_AGENT = "ghostpkg/0.1 (+https://github.com/m1rwana12/ghostpkg)"
 TIMEOUT = 15
+
+# npm serves whole packuments: @types/node is 11 MB uncompressed and 1.4 MB
+# gzipped, and parsing the uncompressed form peaks around 60 MB of objects.
+MAX_RESPONSE_BYTES = 32 * 1024 * 1024
 
 
 class RegistryError(RuntimeError):
@@ -39,19 +44,34 @@ class PackageFacts:
 
 
 def _get_json(url: str) -> dict | None:
-    """Fetch and decode JSON. Returns None on a clean 404."""
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    """Fetch and decode JSON. Returns None on a clean 404.
+
+    Everything that is not a clean 404 becomes a RegistryError. That matters
+    more than it looks: urlopen only wraps failures that happen while
+    *connecting*, so a stalled or reset connection during `read()` used to
+    escape as a bare TimeoutError or ConnectionResetError, leave a traceback,
+    and exit 1 -- the code that means "a package does not exist". The most
+    ordinary network flakiness read as a confirmed detection.
+    """
+    request = urllib.request.Request(
+        url, headers={"User-Agent": USER_AGENT, "Accept-Encoding": "gzip"}
+    )
     try:
         with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
-            return json.loads(response.read().decode("utf-8"))
+            raw = response.read(MAX_RESPONSE_BYTES + 1)
+            if len(raw) > MAX_RESPONSE_BYTES:
+                raise RegistryError(f"{url} returned more than {MAX_RESPONSE_BYTES} bytes")
+            if response.headers.get("Content-Encoding") == "gzip":
+                raw = gzip.decompress(raw)
+        return json.loads(raw.decode("utf-8"))
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
             return None
         raise RegistryError(f"{url} returned HTTP {exc.code}") from exc
-    except urllib.error.URLError as exc:
-        raise RegistryError(f"could not reach {url}: {exc.reason}") from exc
-    except json.JSONDecodeError as exc:
-        raise RegistryError(f"{url} returned malformed JSON") from exc
+    except RegistryError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - anything else is "lookup failed"
+        raise RegistryError(f"could not read {url}: {exc}") from exc
 
 
 def _age_in_days(iso_timestamp: str) -> int | None:

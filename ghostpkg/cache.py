@@ -17,8 +17,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import tempfile
+import threading
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -61,7 +63,15 @@ def ttl_for(facts: PackageFacts) -> int:
 
 
 class Cache:
-    """Read once, write once. Threads only read, so no locking is needed."""
+    """Loaded once, written once, read and updated from worker threads between.
+
+    `put` is called from the scan's thread pool, so this is not lock-free by
+    virtue of nobody mutating it -- an earlier version of this docstring
+    claimed that and was wrong. It is safe because `dict.__setitem__` is
+    atomic under the GIL and `save`/`_prune` only run after the pool has shut
+    down. The lock exists so that stops being load-bearing on free-threaded
+    builds, where that guarantee does not hold.
+    """
 
     def __init__(self, directory: Path | None = None, enabled: bool = True) -> None:
         self.enabled = enabled
@@ -70,6 +80,7 @@ class Cache:
         self._dirty = False
         self.hits = 0
         self.misses = 0
+        self._lock = threading.Lock()
         if self.enabled:
             self._load()
 
@@ -90,44 +101,62 @@ class Cache:
 
     @staticmethod
     def _key(ecosystem: str, name: str) -> str:
-        return f"{ecosystem}:{name.lower()}"
+        """Normalise per ecosystem, because they do not agree.
+
+        PyPI names are case-insensitive and treat `-`, `_` and `.` as the same
+        separator (PEP 503), so `zope.interface` and `Zope_Interface` are one
+        package. npm names are case-sensitive, and `JSONStream` and `jsonstream`
+        are two different real packages -- lowercasing both into one key served
+        one package's facts for the other, including a wrong `exists`.
+        """
+        if ecosystem == "pypi":
+            return f"pypi:{re.sub(r'[-_.]+', '-', name).lower()}"
+        return f"{ecosystem}:{name}"
 
     def get(self, ecosystem: str, name: str) -> PackageFacts | None:
         if not self.enabled:
             return None
-        entry = self._entries.get(self._key(ecosystem, name))
+        with self._lock:
+            entry = self._entries.get(self._key(ecosystem, name))
         if not isinstance(entry, dict):
-            self.misses += 1
+            self._miss()
             return None
         stored_at = entry.get("at")
         ttl = entry.get("ttl")
         facts = entry.get("facts")
         if not isinstance(stored_at, (int, float)) or not isinstance(ttl, (int, float)):
-            self.misses += 1
+            self._miss()
             return None
         if time.time() - stored_at > ttl:
-            self.misses += 1
+            self._miss()
             return None
         try:
             revived = PackageFacts(**facts)
         except (TypeError, ValueError):
-            self.misses += 1
+            self._miss()
             return None
-        self.hits += 1
+        with self._lock:
+            self.hits += 1
         # keep the caller's spelling of the name rather than the cached one
         if revived.name != name:
             revived = PackageFacts(**{**asdict(revived), "name": name})
         return revived
 
+    def _miss(self) -> None:
+        with self._lock:
+            self.misses += 1
+
     def put(self, facts: PackageFacts) -> None:
         if not self.enabled:
             return
-        self._entries[self._key(facts.ecosystem, facts.name)] = {
+        entry = {
             "at": time.time(),
             "ttl": ttl_for(facts),
             "facts": asdict(facts),
         }
-        self._dirty = True
+        with self._lock:
+            self._entries[self._key(facts.ecosystem, facts.name)] = entry
+            self._dirty = True
 
     def _prune(self) -> None:
         now = time.time()

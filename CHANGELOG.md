@@ -6,6 +6,66 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-01
+
+A correctness release. Several of these were **silent** failures -- the tool
+reported success having never performed the check, which for a security tool is
+worse than crashing. Found by a systematic audit rather than by users.
+
+### Fixed -- silent misses
+- **Every package whose name begins with `http` was dropped from
+  `requirements.txt`.** A filter meant to skip bare URLs matched names too, so
+  `httpx`, `httpcore`, `httplib2` and friends were never checked and the tool
+  still printed "all packages look fine". `httpx` is a top-100 PyPI project.
+- **`-r` and `-c` includes were ignored**, so a project that splits its
+  requirements across files was only half checked. Includes are now followed,
+  with cycle detection and a depth limit.
+
+### Fixed -- false blocks
+- **Direct references and private indexes.** `internal-lib @ git+https://...`
+  was read as the plain name `internal-lib`, which is absent from public PyPI,
+  so every internal package in a company using its own index was **blocked**.
+  Direct references, `--index-url`, editable installs, local paths and hashes
+  are now recognised and skipped.
+- **Any `.txt` file was parsed as requirements.** `README.txt` became the
+  package list `['Install', 'Run', 'numpy']` -- two confident blocks on prose.
+  Only `requirements*.txt`, `constraints*.txt` and `*.in` are accepted now, and
+  anything else is refused by name.
+- **`--deep` judged packages by install scripts they merely shipped.** Matching
+  `setup.py` by basename meant a package vendoring a dependency or including
+  packaging test fixtures was blocked on somebody else's code. Only the
+  archive's own top-level install script is read.
+
+### Fixed -- wrong exit codes and lost results
+- **A connection that failed mid-response escaped as a traceback and exited
+  `1`** -- the code meaning "a package does not exist". `urlopen` only wraps
+  failures that happen while connecting, so a stalled proxy or a reset
+  connection read as a confirmed detection. All lookup failures are now
+  `RegistryError`.
+- **One failed lookup discarded the entire scan**, including already-confirmed
+  blocks, and skipped the cache write so the inevitable retry re-issued every
+  request. Failures are now per-name, with a new `ERROR` verdict, and exit
+  code `2` -- an unchecked name is never a pass.
+- **`ghostpkg scan <directory>`** crashed with a traceback; it now explains
+  itself and exits `2`.
+
+### Fixed -- wrong answers
+- **npm cache keys collapsed case-distinct packages.** `JSONStream` and
+  `jsonstream` are two different real packages; lowercasing both into one key
+  served one package's facts for the other, including a wrong `exists`. Keys
+  are now normalised per ecosystem -- PEP 503 for PyPI, exact for npm.
+
+### Changed
+- **npm lookups now request gzip.** `@types/node` was 10.6 MB per lookup and is
+  now 1.35 MB; `react` went from 6.6 MB to 1.30 MB. Responses are also size-capped.
+- **Repeated names are looked up once.** Manifests repeat names, and following
+  includes makes that more likely.
+- `pyproject.toml` now reads PEP 735 `[dependency-groups]`, and Poetry group
+  dependencies are found on Python 3.9/3.10 as well as 3.11+.
+- `package.json` now reads `peerDependencies`.
+- The cache takes a lock around its counters and entry map, and its docstring
+  no longer claims threads only read from it -- they do not.
+
 ## [0.6.0] - 2026-09-01
 
 ### Fixed
@@ -184,7 +244,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.7.0
 [0.6.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.6.0
 [0.5.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.5.0
 [0.4.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.4.0

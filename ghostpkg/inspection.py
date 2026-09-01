@@ -146,7 +146,20 @@ def _read_member(handle, member, size: int) -> str | None:
 
 
 def _interesting(path: str, ecosystem: str) -> bool:
-    name = path.rsplit("/", 1)[-1]
+    """Only the archive's own install script, never a nested one.
+
+    Matching on the basename alone meant a package that ships packaging test
+    fixtures or vendors a dependency was judged on somebody else's
+    `setup.py` -- and since install signals block a young package, that was
+    the one false-positive path in the blocking logic.
+
+    Both ecosystems put the real one exactly one directory down:
+    `<name>-<version>/setup.py` for an sdist, `package/package.json` for npm.
+    """
+    parts = path.strip("/").split("/")
+    if len(parts) != 2:
+        return False
+    name = parts[1]
     if ecosystem == "npm":
         return name == "package.json"
     return name in PY_INSTALL_FILES

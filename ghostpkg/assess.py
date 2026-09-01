@@ -29,6 +29,10 @@ class Verdict(str, Enum):
     OK = "OK"
     WARN = "WARN"
     BLOCK = "BLOCK"
+    #: The registry could not be reached for this name. Never a pass: a
+    #: security check that silently succeeds when it could not run is worse
+    #: than no check at all.
+    ERROR = "ERROR"
 
 
 @dataclass
@@ -42,6 +46,10 @@ class Finding:
     @property
     def is_blocked(self) -> bool:
         return self.verdict is Verdict.BLOCK
+
+    @property
+    def is_error(self) -> bool:
+        return self.verdict is Verdict.ERROR
 
 
 def edit_distance(left: str, right: str, cutoff: int = 3) -> int:

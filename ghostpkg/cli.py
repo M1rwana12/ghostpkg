@@ -51,6 +51,7 @@ class Palette:
 
 MARKS = {
     Verdict.BLOCK: ("BLOCKED", "red"),
+    Verdict.ERROR: ("ERROR", "red"),
     Verdict.WARN: ("WARNING", "yellow"),
     Verdict.OK: ("ok", "green"),
 }
@@ -80,14 +81,18 @@ def render(findings: list[Finding], palette: Palette, quiet: bool) -> None:
 def summarise(findings: list[Finding], palette: Palette) -> None:
     blocked = [f for f in findings if f.verdict is Verdict.BLOCK]
     warned = [f for f in findings if f.verdict is Verdict.WARN]
+    errored = [f for f in findings if f.verdict is Verdict.ERROR]
 
     print()
     if blocked:
         names = ", ".join(f.name for f in blocked)
         print(palette.red(f"  {len(blocked)} blocked: {names}"))
+    if errored:
+        names = ", ".join(f.name for f in errored)
+        print(palette.red(f"  {len(errored)} could not be checked: {names}"))
     if warned:
         print(palette.yellow(f"  {len(warned)} to review by hand"))
-    if not blocked and not warned:
+    if not blocked and not warned and not errored:
         print(palette.green(f"  all {len(findings)} packages look fine"))
 
 
@@ -99,11 +104,24 @@ def evaluate(
     deep: bool = False,
 ) -> list[Finding]:
     def one(name: str) -> Finding:
-        facts = cache.get(ecosystem, name) if cache else None
-        if facts is None:
-            facts = fetch(name, ecosystem)
-            if cache:
-                cache.put(facts)
+        # A failure on one name must not discard the whole scan. It used to:
+        # pool.map re-raised the first exception while iterating, throwing away
+        # every confirmed BLOCK alongside it and skipping the cache write, so
+        # the inevitable retry re-issued every lookup and made a rate-limit
+        # response self-amplifying.
+        try:
+            facts = cache.get(ecosystem, name) if cache else None
+            if facts is None:
+                facts = fetch(name, ecosystem)
+                if cache:
+                    cache.put(facts)
+        except RegistryError as exc:
+            return Finding(
+                name=name,
+                ecosystem=ecosystem,
+                verdict=Verdict.ERROR,
+                reasons=[f"could not check: {exc}"],
+            )
 
         signals = None
         # Only young packages are worth the download: a registered slopsquat is
@@ -124,11 +142,14 @@ def evaluate(
 
         return assess(facts, strict=strict, signals=signals)
 
+    # Look each distinct name up once. A manifest can repeat a name, and
+    # following -r includes makes that more likely.
+    unique = list(dict.fromkeys(names))
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-        findings = list(pool.map(one, names))
+        results = dict(zip(unique, pool.map(one, unique)))
     if cache:
         cache.save()
-    return findings
+    return [results[name] for name in names]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -186,12 +207,18 @@ def main(argv: list[str] | None = None) -> int:
         if not args.path.exists():
             print(f"ghostpkg: no such file: {args.path}", file=sys.stderr)
             return EXIT_ERROR
+        if args.path.is_dir():
+            print(
+                f"ghostpkg: {args.path} is a directory; pass a manifest file",
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
         try:
             names, ecosystem = load_manifest(args.path)
         except UnsupportedManifest as exc:
             print(f"ghostpkg: {exc}", file=sys.stderr)
             return EXIT_ERROR
-        except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as exc:
+        except (json.JSONDecodeError, UnicodeDecodeError, ValueError, OSError) as exc:
             print(f"ghostpkg: could not parse {args.path}: {exc}", file=sys.stderr)
             return EXIT_ERROR
         if not names:
@@ -201,11 +228,7 @@ def main(argv: list[str] | None = None) -> int:
         names, ecosystem = args.names, args.ecosystem
 
     cache = Cache(enabled=not args.no_cache)
-    try:
-        findings = evaluate(names, ecosystem, args.strict, cache, args.deep)
-    except RegistryError as exc:
-        print(f"ghostpkg: {exc}", file=sys.stderr)
-        return EXIT_ERROR
+    findings = evaluate(names, ecosystem, args.strict, cache, args.deep)
 
     if args.json:
         print(
@@ -227,7 +250,12 @@ def main(argv: list[str] | None = None) -> int:
         render(findings, palette, args.quiet)
         summarise(findings, palette)
 
-    return EXIT_BLOCKED if any(f.is_blocked for f in findings) else EXIT_OK
+    if any(f.is_blocked for f in findings):
+        return EXIT_BLOCKED
+    # An unchecked name is not a pass.
+    if any(f.is_error for f in findings):
+        return EXIT_ERROR
+    return EXIT_OK
 
 
 if __name__ == "__main__":
