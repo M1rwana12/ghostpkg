@@ -191,7 +191,7 @@ $ ghostpkg check somepkgthatisnotreal9911 --json
 | First published < 1 year ago | 🟡 Warning | Weaker version of the same signal. |
 | Only one release | 🟡 Warning | Squats are usually published once and abandoned. |
 | No repository or homepage link | 🟡 Warning | Real projects almost always link to source. |
-| 1–2 edits from a popular name, **and** recently published | 🟡 Warning | Classic typosquat shape. A swap of adjacent characters counts as one edit, because `recat`/`react` is what squatters actually publish. Age matters: an old lookalike is just a package with a similar name. |
+| 1–2 edits from a popular name, **and** the package is either recent **or** abandoned (≤2 releases and no repository link) | 🟡 Warning | Classic typosquat shape. A swap of adjacent characters counts as one edit, because `recat`/`react` is what squatters actually publish. Age alone was the wrong gate: `expresss` has sat on npm since 2016 with one release and ~2,500 typo-driven downloads a month. |
 
 Warnings are advisory by default. Nothing but non-existence blocks unless you pass
 `--strict`.

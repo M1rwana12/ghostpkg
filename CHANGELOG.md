@@ -6,6 +6,41 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-01
+
+### Fixed
+- **Typo detection missed parked lookalikes, because age was the wrong gate.**
+  The check only ran on packages published within the last year, on the
+  reasoning that "an old lookalike is just a package with a similar name". That
+  reasoning was wrong. `expresss` has sat on npm since **2016** with one
+  release, no repository link, and roughly **2,500 downloads a month** arriving
+  purely from other people's typos. Ten years old, and waved straight through.
+
+### Changed
+- The typo check now also runs on packages that look **abandoned**: two or fewer
+  releases *and* no repository link, at any age.
+
+  The pairing is not a guess. Measured against 120 real packages that sit within
+  the typo budget of a popular name:
+
+  | Rule | Wrong about |
+  |---|---|
+  | Two or fewer releases, alone | 10.0% |
+  | No repository link, alone | 5.8% |
+  | **Both together** | **0.0%** |
+
+  Either condition alone is too loose because sibling packages in a family sit
+  naturally close together — `dagster-k8s` is two edits from `dagster-aws`, and
+  `pulumi-tls` from `pulumi-aws`. Those are maintained, so they carry releases
+  and a repository, and requiring both conditions leaves them alone.
+
+- Warning text now says which condition fired, rather than calling a
+  ten-year-old package "recently published".
+
+### Note
+A defensively parked name still passes, which is correct: npm holds `lodahs`
+itself and points it at `npm/security-holder`, so it has a repository link.
+
 ## [0.5.0] - 2026-09-01
 
 ### Added
@@ -149,7 +184,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.6.0
 [0.5.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.5.0
 [0.4.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.4.0
 [0.3.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.3.0

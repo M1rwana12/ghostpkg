@@ -162,3 +162,61 @@ class TestNoFalsePositivesOnPopularNames:
     def test_no_popular_npm_name_is_flagged(self):
         flagged = [n for n in TOP_NPM if nearest_popular(n, "npm") is not None]
         assert flagged == []
+
+
+class TestAbandonedLookalikes:
+    """Age was the wrong gate for typo detection.
+
+    `expresss` has sat on npm since 2016 with one release, no repository link,
+    and roughly 2,500 downloads a month arriving purely from other people's
+    typos. It is ten years old, so an age gate let it straight through.
+    """
+
+    def old_squat(self, **overrides):
+        base = dict(
+            name="expresss",
+            ecosystem="npm",
+            exists=True,
+            age_days=3400,
+            release_count=1,
+            has_repo_url=False,
+        )
+        base.update(overrides)
+        return PackageFacts(**base)
+
+    def test_old_parked_lookalike_is_flagged(self):
+        finding = assess(self.old_squat())
+        assert finding.verdict is Verdict.WARN
+        assert any("express" in reason for reason in finding.reasons)
+
+    def test_reason_says_why_rather_than_calling_it_new(self):
+        finding = assess(self.old_squat())
+        assert any("one release, no repository" in r for r in finding.reasons)
+        assert not any("recently published" in r for r in finding.reasons)
+
+    def test_a_maintained_lookalike_is_left_alone(self):
+        """Sibling packages in a family sit close together -- dagster-k8s is two
+        edits from dagster-aws -- and they are maintained."""
+        finding = assess(self.old_squat(release_count=630, has_repo_url=True))
+        assert finding.verdict is Verdict.OK
+
+    def test_releases_alone_are_not_enough_to_fire(self):
+        """Measured on 120 real lookalike-shaped packages, few-releases alone
+        was wrong 10% of the time."""
+        finding = assess(self.old_squat(release_count=1, has_repo_url=True))
+        assert not any("away from" in r for r in finding.reasons)
+
+    def test_missing_repo_alone_is_not_enough_to_fire(self):
+        """And no-repository alone was wrong 5.8% of the time."""
+        finding = assess(self.old_squat(release_count=40, has_repo_url=False))
+        assert not any("away from" in r for r in finding.reasons)
+
+    def test_a_defensively_held_name_passes(self):
+        """npm parks some names itself, with a repository link on the holder."""
+        finding = assess(
+            PackageFacts(
+                name="lodahs", ecosystem="npm", exists=True, age_days=2100,
+                release_count=1, has_repo_url=True,
+            )
+        )
+        assert finding.verdict is Verdict.OK

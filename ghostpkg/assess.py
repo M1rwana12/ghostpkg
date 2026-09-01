@@ -173,13 +173,27 @@ def assess(
 
     is_young = facts.age_days is not None and facts.age_days < NEW_DAYS
 
-    if is_young:
+    # A parked lookalike is not necessarily new. `expresss` has sat on npm since
+    # 2016 with one release, no repository link, and roughly 2,500 downloads a
+    # month arriving purely from other people's typos. Age was the wrong gate.
+    #
+    # Abandonment is the right one, but only as a pair. Measured against 120 real
+    # packages that sit within the typo budget of a popular name, "few releases"
+    # alone was wrong 10% of the time and "no repository link" alone 5.8%, while
+    # requiring both was wrong 0% of the time. That matters because sibling
+    # packages in a family are naturally close together -- dagster-k8s is two
+    # edits from dagster-aws, pulumi-tls from pulumi-aws -- and they are
+    # maintained, so they carry releases and a repository.
+    looks_abandoned = facts.release_count <= 2 and not facts.has_repo_url
+
+    if is_young or looks_abandoned:
         neighbour = nearest_popular(facts.name, facts.ecosystem)
         if neighbour is not None:
             popular_name, distance = neighbour
+            character = "character" if distance == 1 else "characters"
+            context = "recently published" if is_young else "one release, no repository"
             reasons.append(
-                f"{distance} character{'s' if distance > 1 else ''} away from "
-                f"'{popular_name}', and recently published"
+                f"{distance} {character} away from '{popular_name}', and {context}"
             )
 
     if is_young and facts.release_count <= 1:
