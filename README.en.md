@@ -12,8 +12,8 @@ Language models invent library names. Attackers register those names in advance.
 **English** · [Українська](https://github.com/M1rwana12/ghostpkg/blob/main/README.md)
 
 [![CI](https://github.com/M1rwana12/ghostpkg/actions/workflows/ci.yml/badge.svg)](https://github.com/M1rwana12/ghostpkg/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/ghostpkg.svg?color=A78BFA)](https://pypi.org/project/ghostpkg/)
-[![Python](https://img.shields.io/pypi/pyversions/ghostpkg.svg?color=A78BFA)](https://pypi.org/project/ghostpkg/)
+[![PyPI](https://img.shields.io/pypi/v/ghostpkg?color=A78BFA&label=pypi)](https://pypi.org/project/ghostpkg/)
+[![Python](https://img.shields.io/pypi/pyversions/ghostpkg?color=A78BFA&label=python)](https://pypi.org/project/ghostpkg/)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-3FB950.svg)](https://github.com/M1rwana12/ghostpkg/blob/main/pyproject.toml)
 [![License](https://img.shields.io/badge/license-MIT-8B949E.svg)](https://github.com/M1rwana12/ghostpkg/blob/main/LICENSE)
 

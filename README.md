@@ -12,8 +12,8 @@
 [English](README.en.md) · **Українська**
 
 [![CI](https://github.com/M1rwana12/ghostpkg/actions/workflows/ci.yml/badge.svg)](https://github.com/M1rwana12/ghostpkg/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/ghostpkg.svg?color=A78BFA)](https://pypi.org/project/ghostpkg/)
-[![Python](https://img.shields.io/pypi/pyversions/ghostpkg.svg?color=A78BFA)](https://pypi.org/project/ghostpkg/)
+[![PyPI](https://img.shields.io/pypi/v/ghostpkg?color=A78BFA&label=pypi)](https://pypi.org/project/ghostpkg/)
+[![Python](https://img.shields.io/pypi/pyversions/ghostpkg?color=A78BFA&label=python)](https://pypi.org/project/ghostpkg/)
 [![Залежності](https://img.shields.io/badge/%D0%B7%D0%B0%D0%BB%D0%B5%D0%B6%D0%BD%D0%BE%D1%81%D1%82%D0%B5%D0%B9-0-3FB950.svg)](pyproject.toml)
 [![Ліцензія](https://img.shields.io/badge/%D0%BB%D1%96%D1%86%D0%B5%D0%BD%D0%B7%D1%96%D1%8F-MIT-8B949E.svg)](LICENSE)
 
