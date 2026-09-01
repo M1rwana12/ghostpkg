@@ -6,11 +6,12 @@ import argparse
 import concurrent.futures
 import json
 import os
-import re
 import sys
 from pathlib import Path
 
+from . import __version__
 from .assess import Finding, Verdict, assess
+from .manifests import UnsupportedManifest, load_manifest
 from .registries import RegistryError, fetch
 
 EXIT_OK = 0
@@ -96,42 +97,14 @@ def evaluate(names: list[str], ecosystem: str, strict: bool) -> list[Finding]:
         return list(pool.map(one, names))
 
 
-REQUIREMENT_LINE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
-
-
-def parse_requirements(text: str) -> list[str]:
-    names = []
-    for raw in text.splitlines():
-        line = raw.strip()
-        if not line or line.startswith(("#", "-", "git+", "http")):
-            continue
-        match = REQUIREMENT_LINE.match(line)
-        if match:
-            names.append(match.group(1))
-    return names
-
-
-def parse_package_json(text: str) -> list[str]:
-    data = json.loads(text)
-    names: list[str] = []
-    for key in ("dependencies", "devDependencies", "optionalDependencies"):
-        names.extend((data.get(key) or {}).keys())
-    return names
-
-
-def load_manifest(path: Path) -> tuple[list[str], str]:
-    text = path.read_text(encoding="utf-8")
-    if path.name == "package.json":
-        return parse_package_json(text), "npm"
-    return parse_requirements(text), "pypi"
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ghostpkg",
         description="Catch package names that do not exist before you install them.",
     )
-    parser.add_argument("--version", action="version", version="ghostpkg 0.1.0")
+    parser.add_argument(
+        "--version", action="version", version=f"ghostpkg {__version__}"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     check = sub.add_parser("check", help="check one or more package names")
@@ -139,7 +112,9 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("-e", "--ecosystem", choices=("pypi", "npm"), default="pypi")
 
     scan = sub.add_parser("scan", help="check every dependency in a manifest")
-    scan.add_argument("path", type=Path, help="requirements.txt or package.json")
+    scan.add_argument(
+        "path", type=Path, help="requirements*.txt, pyproject.toml or package.json"
+    )
 
     for command in (check, scan):
         command.add_argument(
@@ -162,7 +137,10 @@ def main(argv: list[str] | None = None) -> int:
             return EXIT_ERROR
         try:
             names, ecosystem = load_manifest(args.path)
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        except UnsupportedManifest as exc:
+            print(f"ghostpkg: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+        except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as exc:
             print(f"ghostpkg: could not parse {args.path}: {exc}", file=sys.stderr)
             return EXIT_ERROR
         if not names:

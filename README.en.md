@@ -111,12 +111,19 @@ ghostpkg check react-router-dom-utils -e npm
 
 ```bash
 ghostpkg scan requirements.txt
+ghostpkg scan pyproject.toml
 ghostpkg scan package.json
 ```
 
-`requirements.txt` parsing skips comments, flags, VCS URLs and direct links, and
-takes the bare project name off each requirement line. `package.json` reads
-`dependencies`, `devDependencies` and `optionalDependencies`.
+| Manifest | What is read |
+|---|---|
+| `requirements*.txt` | Every requirement line. Comments, flags, VCS URLs and direct links are skipped. |
+| `pyproject.toml` | PEP 621 `project.dependencies` and `project.optional-dependencies`, plus Poetry's `tool.poetry` groups. `[build-system] requires` is not included, and the `python` constraint is not treated as a package. |
+| `package.json` | `dependencies`, `devDependencies`, `optionalDependencies`. |
+
+Anything else is **refused with an error rather than guessed at**. Guessing is
+what made an earlier version read `pyproject.toml` with the requirements parser
+and report TOML keys as package names.
 
 ### Options
 

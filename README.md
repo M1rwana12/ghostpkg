@@ -81,6 +81,7 @@ ghostpkg check react-router-dom-utils -e npm
 
 # перевірити всі залежності з маніфесту
 ghostpkg scan requirements.txt
+ghostpkg scan pyproject.toml
 ghostpkg scan package.json
 
 # машинозчитуваний вивід
@@ -93,6 +94,9 @@ ghostpkg check somepkg --json
 | `--strict` | Підвищує попередження до блокувань |
 | `--json` | Вивід у JSON для скриптів і CI |
 | `-q`, `--quiet` | Ховає пакети, які пройшли перевірку |
+
+`scan` розпізнає `requirements*.txt`, `pyproject.toml` (PEP 621 і Poetry)
+та `package.json`. Невідомий формат він **відхиляє з помилкою, а не вгадує**.
 
 ---
 

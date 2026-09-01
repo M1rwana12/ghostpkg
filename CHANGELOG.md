@@ -6,6 +6,31 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-01
+
+### Fixed
+- **`scan` reported nonsense for `pyproject.toml`.** Every file that was not
+  `package.json` was handed to the requirements.txt parser, so TOML keys were
+  read as package names: `build-backend` came back "does not exist on pypi",
+  and `version` came back "ok" because a package of that name exists. For a
+  security tool, confidently reporting nonsense is the worst failure mode.
+
+### Added
+- `pyproject.toml` support in `scan`: PEP 621 `project.dependencies` and
+  `project.optional-dependencies`, plus Poetry's `tool.poetry` groups.
+  `[build-system] requires` is excluded, and Poetry's `python` constraint is
+  not treated as a package.
+- Manifests are now detected explicitly. An unrecognised file is **refused with
+  an error rather than guessed at** — guessing was the root cause of the bug
+  above.
+- A narrow TOML fallback parser for Python 3.9 and 3.10, which have no
+  `tomllib`. Adding a TOML dependency would contradict the zero-dependency rule,
+  and the fallback is tested by forcing the import to fail rather than by
+  trusting the interpreter the suite runs on.
+
+### Changed
+- `--version` now reads `__version__` instead of a hardcoded string.
+
 ## [0.1.0] - 2026-09-01
 
 First release.
@@ -35,5 +60,6 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.2.0
 [0.1.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.1.0

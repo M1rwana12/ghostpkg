@@ -1,6 +1,6 @@
 """ghostpkg -- catch package names that do not exist before you install them."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 from .assess import Finding, Verdict, assess
 from .registries import PackageFacts, RegistryError, fetch
