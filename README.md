@@ -38,15 +38,9 @@
 
 ## Рішення
 
-```console
-$ ghostpkg check requests-async-helper-sdk numpy
-
-  BLOCKED  requests-async-helper-sdk
-           - does not exist on pypi
-  ok       numpy  (136 releases, 19.8y old)
-
-  1 blocked: requests-async-helper-sdk
-```
+<div align="center">
+  <img src="assets/demo.gif" alt="ghostpkg блокує неіснуючий пакет" width="100%">
+</div>
 
 Код виходу — `1`, якщо щось заблоковано. Тому інструмент без переробок стає на місце
 в CI або в хук перед встановленням.

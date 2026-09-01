@@ -61,15 +61,9 @@ published a formal research note on it in April 2026.
 It answers one question, precisely: **does this package actually exist, and if so,
 does anything about it look wrong?**
 
-```console
-$ ghostpkg check requests-async-helper-sdk numpy
-
-  BLOCKED  requests-async-helper-sdk
-           - does not exist on pypi
-  ok       numpy  (136 releases, 19.8y old)
-
-  1 blocked: requests-async-helper-sdk
-```
+<div align="center">
+  <img src="assets/demo.gif" alt="ghostpkg blocking a package that does not exist" width="100%">
+</div>
 
 The exit code is `1` when anything is blocked, so it drops straight into CI or a
 pre-install hook with no glue code.
