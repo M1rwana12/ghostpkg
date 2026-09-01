@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/banner.png" alt="ghostpkg" width="100%">
+<img src="https://raw.githubusercontent.com/M1rwana12/ghostpkg/main/assets/banner.png" alt="ghostpkg" width="100%">
 
 <h1>ghostpkg</h1>
 
@@ -9,13 +9,13 @@
 Language models invent library names. Attackers register those names in advance.
 `ghostpkg` checks the name against the real registry — before `pip` or `npm` downloads anything.
 
-**English** · [Українська](README.md)
+**English** · [Українська](https://github.com/M1rwana12/ghostpkg/blob/main/README.md)
 
 [![CI](https://github.com/M1rwana12/ghostpkg/actions/workflows/ci.yml/badge.svg)](https://github.com/M1rwana12/ghostpkg/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/ghostpkg.svg?color=A78BFA)](https://pypi.org/project/ghostpkg/)
 [![Python](https://img.shields.io/pypi/pyversions/ghostpkg.svg?color=A78BFA)](https://pypi.org/project/ghostpkg/)
-[![Dependencies](https://img.shields.io/badge/dependencies-0-3FB950.svg)](pyproject.toml)
-[![License](https://img.shields.io/badge/license-MIT-8B949E.svg)](LICENSE)
+[![Dependencies](https://img.shields.io/badge/dependencies-0-3FB950.svg)](https://github.com/M1rwana12/ghostpkg/blob/main/pyproject.toml)
+[![License](https://img.shields.io/badge/license-MIT-8B949E.svg)](https://github.com/M1rwana12/ghostpkg/blob/main/LICENSE)
 
 </div>
 
@@ -62,7 +62,7 @@ It answers one question, precisely: **does this package actually exist, and if s
 does anything about it look wrong?**
 
 <div align="center">
-  <img src="assets/demo.gif" alt="ghostpkg blocking a package that does not exist" width="100%">
+  <img src="https://raw.githubusercontent.com/M1rwana12/ghostpkg/main/assets/demo.gif" alt="ghostpkg blocking a package that does not exist" width="100%">
 </div>
 
 The exit code is `1` when anything is blocked, so it drops straight into CI or a
@@ -324,7 +324,7 @@ live instead.
 
 ## Contributing
 
-Issues and pull requests welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+Issues and pull requests welcome — see [CONTRIBUTING.md](https://github.com/M1rwana12/ghostpkg/blob/main/CONTRIBUTING.md).
 
 ```bash
 git clone https://github.com/M1rwana12/ghostpkg
@@ -338,8 +338,8 @@ a real package, that's a bug — a tool that cries wolf on legitimate packages g
 turned off, and then it protects nothing.
 
 The threat model, and an explicit list of what this tool does **not** catch, is in
-[SECURITY.md](SECURITY.md).
+[SECURITY.md](https://github.com/M1rwana12/ghostpkg/blob/main/SECURITY.md).
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/M1rwana12/ghostpkg/blob/main/LICENSE)

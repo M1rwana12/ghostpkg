@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "ghostpkg"
 version = "0.1.0"
 description = "Catch package names that do not exist before you install them"
-readme = "README.md"
+readme = "README.en.md"  # English page for PyPI; the repo main page is Ukrainian
 requires-python = ">=3.9"
 license = { file = "LICENSE" }
 authors = [{ name = "m1rwana12", email = "senja3209@icloud.com" }]
