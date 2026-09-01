@@ -283,7 +283,10 @@ def main(argv: list[str] | None = None) -> int:
             except (json.JSONDecodeError, UnicodeDecodeError, ValueError, OSError) as exc:
                 print(f"ghostpkg: could not parse {path}: {exc}", file=sys.stderr)
                 return EXIT_ERROR
-            by_ecosystem.setdefault(ecosystem, []).extend(found)
+            for requirement in found:
+                by_ecosystem.setdefault(
+                    requirement.ecosystem or ecosystem, []
+                ).append(requirement)
         if not any(by_ecosystem.values()):
             where = ", ".join(str(p) for p in args.paths)
             print(f"ghostpkg: no dependencies found in {where}", file=sys.stderr)

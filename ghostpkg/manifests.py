@@ -46,6 +46,10 @@ class Requirement:
     specifier: str | None = None
     line: int | None = None
     source: str | None = None
+    #: Set only when the item itself says which registry it belongs to. A
+    #: README can hold `pip install x` and `npm i y` in adjacent lines, so the
+    #: ecosystem cannot always come from the file.
+    ecosystem: str | None = None
 
 
 # `name @ https://...` is a direct reference: the source is stated explicitly
@@ -56,7 +60,8 @@ REQUIREMENTS_NAMES = ("requirements", "constraints", "dev-requirements", "test-r
 
 SUPPORTED = (
     "requirements*.txt, *.in, pyproject.toml, package.json, "
-    "package-lock.json, poetry.lock, uv.lock"
+    "package-lock.json, poetry.lock, uv.lock, "
+    "and prose files: README, AGENTS.md, *.md, .cursorrules"
 )
 
 MAX_INCLUDE_DEPTH = 10
@@ -441,9 +446,18 @@ def _looks_like_requirements(name: str) -> bool:
 
 
 def load_manifest(path: Path) -> tuple[list[Requirement], str]:
-    """Return (requirements, ecosystem). Raises UnsupportedManifest."""
+    """Return (requirements, default ecosystem). Raises UnsupportedManifest.
+
+    Individual requirements may override the ecosystem -- see
+    `Requirement.ecosystem`.
+    """
+    from .prose import extract, looks_like_prose  # noqa: PLC0415
+
     name = path.name.lower()
     source = str(path)
+
+    if looks_like_prose(name):
+        return extract(path.read_text(encoding="utf-8"), source), "pypi"
 
     if name == "package.json":
         return parse_package_json(path.read_text(encoding="utf-8"), source), "npm"

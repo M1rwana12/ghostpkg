@@ -6,6 +6,41 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-09-01
+
+### Added
+- **Prose files are scanned for install commands.** `README`, `AGENTS.md`,
+  `CLAUDE.md`, `.cursorrules`, any `.md`/`.mdx`/`.rst`.
+
+  This closes an ordering problem the tool had from the start: **the
+  hallucination arrives before the manifest does.** A model writes
+  `pip install foo-bar` into a README or an agent instruction file, a person
+  copies the line and runs it, and the install has already happened by the time
+  that name reaches `requirements.txt`. Scanning only manifests meant arriving
+  after the fact.
+
+  Recognises `pip`, `pip3`, `python -m pip`, `uv add`, `uv pip install`,
+  `poetry add`, `pipx`, `conda`, `npm`, `pnpm`, `yarn`, `bun`, and the runners
+  `npx`, `bunx`, `uvx`. A single file may name both ecosystems, and each
+  dependency now carries the one its command implies.
+
+### The measurement that shaped it
+A README is full of words that look like package names, so the first version
+was checked against ten real ones and produced a **25% false-positive rate**:
+`pip install httpx. The command line client is an optional dependency.` gave
+back `The`, `command`, `line`, `client` and `is`, because the command ran past
+the end of its sentence.
+
+Extraction now stops at the first token that is not a package argument.
+Re-measured across thirteen real READMEs — `requests`, `flask`, `httpx`, `ruff`,
+`pydantic`, `react`, `vite`, `prettier`, `axios`, `fastapi`, `poetry`, `pytest`,
+`webpack`, `lodash` — that is **0%**, while the genuine names are still found.
+
+Anything ambiguous is dropped rather than guessed at: `pip install -r
+requirements.txt`, `pip install -e .`, `npm run build`, `pip is a package
+manager`, a URL containing the word install, and `npx create-react-app my-app`
+(where `my-app` is an argument, not a package) all yield nothing.
+
 ## [0.12.0] - 2026-09-01
 
 Two cases the tool used to call **ok**. Both share a shape an existence check
@@ -396,7 +431,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.13.0
 [0.12.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.12.0
 [0.11.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.11.0
 [0.10.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.10.0

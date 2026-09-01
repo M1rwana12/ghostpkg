@@ -76,10 +76,19 @@ class TestManifestDetection:
     two of which do not exist -- confident nonsense from a security tool."""
 
     def test_arbitrary_txt_is_refused(self, tmp_path):
-        path = tmp_path / "README.txt"
+        path = tmp_path / "NOTICE.txt"
         path.write_text("Install ghostpkg today.\nRun the scanner\n", encoding="utf-8")
         with pytest.raises(UnsupportedManifest):
             load_manifest(path)
+
+    def test_a_readme_is_read_as_prose_not_as_requirements(self, tmp_path):
+        """It used to be parsed as a requirements file, which turned the
+        sentence into the package list ['Install', 'Run', 'numpy']. It is prose,
+        so it is now scanned for install commands -- and there are none here."""
+        path = tmp_path / "README.txt"
+        path.write_text("Install ghostpkg today.\nRun the scanner\n", encoding="utf-8")
+        found, _ = load_manifest(path)
+        assert found == []
 
     @pytest.mark.parametrize(
         "filename",

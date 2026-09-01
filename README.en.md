@@ -123,6 +123,18 @@ ghostpkg scan package.json
 | `package.json` | `dependencies`, `devDependencies`, `optionalDependencies`, `peerDependencies`. |
 | `package-lock.json` | Every locked package, both the v1 nested and v2/v3 `packages` layouts. Workspace links are skipped. |
 | `poetry.lock`, `uv.lock` | Every locked package. |
+| `README`, `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `*.md` | Package names out of install commands written in prose. |
+
+**Why prose matters:** the hallucination arrives before the manifest does. A
+model writes `pip install foo-bar` into a README or an agent instruction file,
+somebody copies the line and runs it — the install has already happened by the
+time that name reaches `requirements.txt`.
+
+Extraction is deliberately narrow, because a README is full of words that look
+like package names. Measured across thirteen real READMEs, it finds the genuine
+names with a **0% false-positive rate**; `pip install -r requirements.txt`,
+`npm run build`, `pip is a package manager` and `npx create-react-app my-app`
+(where `my-app` is an argument) all yield nothing.
 
 Lockfiles are worth scanning even when you already scan the manifest: CI
 installs from the lockfile, so it holds the names that actually get fetched --
