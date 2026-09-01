@@ -7,6 +7,8 @@ The malicious samples are shaped after publicly documented slopsquat setup.py
 and npm install-hook patterns. They are deliberately inert.
 """
 
+from __future__ import annotations
+
 import io
 import json
 import tarfile
