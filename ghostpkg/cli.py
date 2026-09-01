@@ -11,6 +11,7 @@ from pathlib import Path
 
 from . import __version__
 from .assess import Finding, Verdict, assess
+from .cache import Cache
 from .manifests import UnsupportedManifest, load_manifest
 from .registries import RegistryError, fetch
 
@@ -89,12 +90,25 @@ def summarise(findings: list[Finding], palette: Palette) -> None:
         print(palette.green(f"  all {len(findings)} packages look fine"))
 
 
-def evaluate(names: list[str], ecosystem: str, strict: bool) -> list[Finding]:
+def evaluate(
+    names: list[str],
+    ecosystem: str,
+    strict: bool,
+    cache: Cache | None = None,
+) -> list[Finding]:
     def one(name: str) -> Finding:
-        return assess(fetch(name, ecosystem), strict=strict)
+        facts = cache.get(ecosystem, name) if cache else None
+        if facts is None:
+            facts = fetch(name, ecosystem)
+            if cache:
+                cache.put(facts)
+        return assess(facts, strict=strict)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-        return list(pool.map(one, names))
+        findings = list(pool.map(one, names))
+    if cache:
+        cache.save()
+    return findings
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -124,12 +138,23 @@ def build_parser() -> argparse.ArgumentParser:
         )
         command.add_argument("--json", action="store_true", help="machine-readable output")
         command.add_argument("-q", "--quiet", action="store_true", help="hide passing packages")
+        command.add_argument(
+            "--no-cache", action="store_true", help="ignore and do not write the cache"
+        )
+
+    sub.add_parser("clear-cache", help="delete the cached registry lookups")
 
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    if args.command == "clear-cache":
+        cache = Cache(enabled=True)
+        removed = cache.clear()
+        print(f"ghostpkg: {'removed ' + str(cache.path) if removed else 'nothing to remove'}")
+        return EXIT_OK
 
     if args.command == "scan":
         if not args.path.exists():
@@ -149,8 +174,9 @@ def main(argv: list[str] | None = None) -> int:
     else:
         names, ecosystem = args.names, args.ecosystem
 
+    cache = Cache(enabled=not args.no_cache)
     try:
-        findings = evaluate(names, ecosystem, args.strict)
+        findings = evaluate(names, ecosystem, args.strict, cache)
     except RegistryError as exc:
         print(f"ghostpkg: {exc}", file=sys.stderr)
         return EXIT_ERROR

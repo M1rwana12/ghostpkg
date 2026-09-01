@@ -6,6 +6,28 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-01
+
+### Added
+- **On-disk cache for registry lookups.** Scanning a 150-package manifest drops
+  from 4.7s to 0.4s on a warm cache. Previously every scan cost one request per
+  dependency, every run, which is slow in CI and rude to the registry.
+- `--no-cache` to bypass it, and `ghostpkg clear-cache` to delete it.
+- `GHOSTPKG_CACHE_DIR` to override the location. The default is
+  `%LOCALAPPDATA%\ghostpkg` on Windows, `~/Library/Caches/ghostpkg` on macOS and
+  `$XDG_CACHE_HOME/ghostpkg` elsewhere, worked out without a dependency.
+
+### Notes on the cache design
+- **Time-to-live depends on the answer, and "does not exist" is held for only an
+  hour.** A free name can be registered at any moment — that is the whole attack
+  — so a negative result must not be trusted for long. Young packages are held
+  six hours, established ones a day.
+- Cache failures are never fatal. A corrupt file, a wrong schema, a malformed
+  entry or an unwritable directory all degrade to no cache rather than breaking
+  a run. There are tests for each of those.
+- Written atomically via a temporary file and `os.replace`, once per run, so a
+  killed process cannot leave a half-written cache behind.
+
 ## [0.3.0] - 2026-09-01
 
 ### Fixed
@@ -87,7 +109,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.4.0
 [0.3.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.3.0
 [0.2.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.2.0
 [0.1.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.1.0

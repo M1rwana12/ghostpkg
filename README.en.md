@@ -133,6 +133,7 @@ and report TOML keys as package names.
 | `--strict` | Promote warnings to blocks |
 | `--json` | Machine-readable output for scripts and CI |
 | `-q`, `--quiet` | Hide packages that passed |
+| `--no-cache` | Neither read nor write the cache |
 | `--version` | Print the version |
 
 ### Exit codes
@@ -142,6 +143,25 @@ and report TOML keys as package names.
 | `0` | Nothing blocked (warnings may still be present) |
 | `1` | At least one package blocked |
 | `2` | Usage error, unreadable manifest, or the registry was unreachable |
+
+### Caching
+
+Lookups are cached on disk, so re-scanning a 150-package manifest takes 0.4s
+instead of 4.7s.
+
+Time-to-live depends on the answer, and the negative case is the one that
+matters: **"does not exist" is held for only an hour**, because a free name can
+be registered at any moment and that is the entire attack. Young packages are
+held six hours, established ones a day.
+
+```bash
+ghostpkg scan requirements.txt --no-cache   # bypass it
+ghostpkg clear-cache                        # delete it
+GHOSTPKG_CACHE_DIR=/tmp/gp ghostpkg check x # move it
+```
+
+A corrupt, unreadable or unwritable cache degrades to no cache rather than
+breaking your run.
 
 ### JSON output
 
@@ -310,7 +330,8 @@ earns its keep. Use both.
   ecosystem, so a squat on a less popular package won't be flagged as a lookalike.
 - Names shorter than five characters are not compared at all: below that the name
   space is too dense for edit distance to mean anything.
-- Every check is a live registry request. There is no caching yet.
+- The cache lives on disk. `ghostpkg clear-cache` removes it and
+  `GHOSTPKG_CACHE_DIR` moves it.
 - Registry outages surface as exit code `2` rather than a silent pass — deliberately,
   but it does mean a flaky network fails your build.
 
