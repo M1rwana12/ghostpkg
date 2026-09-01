@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -20,6 +21,14 @@ TIMEOUT = 15
 # npm serves whole packuments: @types/node is 11 MB uncompressed and 1.4 MB
 # gzipped, and parsing the uncompressed form peaks around 60 MB of objects.
 MAX_RESPONSE_BYTES = 32 * 1024 * 1024
+
+# Both registries rate-limit, and a scan opens several connections at once.
+# Giving up immediately turns a busy moment into a failed run; retrying without
+# a pause makes the rate limiting worse. I did exactly that in a data-collection
+# script and turned one 429 into a self-amplifying storm.
+RETRY_STATUSES = (429, 500, 502, 503, 504)
+MAX_ATTEMPTS = 3
+BACKOFF_SECONDS = 1.5
 
 
 class RegistryError(RuntimeError):
@@ -53,7 +62,7 @@ class PackageFacts:
         return version in self.versions
 
 
-def _get_json(url: str) -> dict | None:
+def _get_json(url: str, timeout: int = TIMEOUT) -> dict | None:
     """Fetch and decode JSON. Returns None on a clean 404.
 
     Everything that is not a clean 404 becomes a RegistryError. That matters
@@ -66,22 +75,48 @@ def _get_json(url: str) -> dict | None:
     request = urllib.request.Request(
         url, headers={"User-Agent": USER_AGENT, "Accept-Encoding": "gzip"}
     )
-    try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
-            raw = response.read(MAX_RESPONSE_BYTES + 1)
-            if len(raw) > MAX_RESPONSE_BYTES:
-                raise RegistryError(f"{url} returned more than {MAX_RESPONSE_BYTES} bytes")
-            if response.headers.get("Content-Encoding") == "gzip":
-                raw = gzip.decompress(raw)
-        return json.loads(raw.decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        if exc.code == 404:
-            return None
-        raise RegistryError(f"{url} returned HTTP {exc.code}") from exc
-    except RegistryError:
-        raise
-    except Exception as exc:  # noqa: BLE001 - anything else is "lookup failed"
-        raise RegistryError(f"could not read {url}: {exc}") from exc
+    last: Exception | None = None
+
+    for attempt in range(MAX_ATTEMPTS):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                raw = response.read(MAX_RESPONSE_BYTES + 1)
+                if len(raw) > MAX_RESPONSE_BYTES:
+                    raise RegistryError(
+                        f"{url} returned more than {MAX_RESPONSE_BYTES} bytes"
+                    )
+                if response.headers.get("Content-Encoding") == "gzip":
+                    raw = gzip.decompress(raw)
+            return json.loads(raw.decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return None
+            if exc.code in RETRY_STATUSES and attempt < MAX_ATTEMPTS - 1:
+                time.sleep(_retry_after(exc, attempt))
+                last = exc
+                continue
+            raise RegistryError(f"{url} returned HTTP {exc.code}") from exc
+        except RegistryError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - anything else is "lookup failed"
+            if attempt < MAX_ATTEMPTS - 1:
+                time.sleep(BACKOFF_SECONDS * (attempt + 1))
+                last = exc
+                continue
+            raise RegistryError(f"could not read {url}: {exc}") from exc
+
+    raise RegistryError(f"could not read {url} after {MAX_ATTEMPTS} attempts: {last}")
+
+
+def _retry_after(exc: urllib.error.HTTPError, attempt: int) -> float:
+    """Honour Retry-After when the registry sends one, else back off."""
+    header = exc.headers.get("Retry-After") if exc.headers else None
+    if header:
+        try:
+            return min(float(header), 30.0)
+        except ValueError:
+            pass
+    return BACKOFF_SECONDS * (2**attempt)
 
 
 def _age_in_days(iso_timestamp: str) -> int | None:

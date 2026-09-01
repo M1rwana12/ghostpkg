@@ -120,7 +120,20 @@ ghostpkg scan package.json
 |---|---|
 | `requirements*.txt` | Every requirement line. Comments, flags, VCS URLs and direct links are skipped. |
 | `pyproject.toml` | PEP 621 `project.dependencies` and `project.optional-dependencies`, plus Poetry's `tool.poetry` groups. `[build-system] requires` is not included, and the `python` constraint is not treated as a package. |
-| `package.json` | `dependencies`, `devDependencies`, `optionalDependencies`. |
+| `package.json` | `dependencies`, `devDependencies`, `optionalDependencies`, `peerDependencies`. |
+| `package-lock.json` | Every locked package, both the v1 nested and v2/v3 `packages` layouts. Workspace links are skipped. |
+| `poetry.lock`, `uv.lock` | Every locked package. |
+
+Lockfiles are worth scanning even when you already scan the manifest: CI
+installs from the lockfile, so it holds the names that actually get fetched --
+including transitive ones the manifest never mentions -- and every entry is
+version-pinned, so all of them are checkable.
+
+Several files can be scanned in one run, and they may be different ecosystems:
+
+```bash
+ghostpkg scan requirements.txt package.json package-lock.json
+```
 
 Anything else is **refused with an error rather than guessed at**. Guessing is
 what made an earlier version read `pyproject.toml` with the requirements parser
@@ -136,6 +149,8 @@ and report TOML keys as package names.
 | `-q`, `--quiet` | Hide packages that passed |
 | `--no-cache` | Neither read nor write the cache |
 | `--deep` | Download recently published packages and statically inspect their install scripts |
+| `--workers N` | Parallel lookups (default 8) |
+| `--timeout SECONDS` | Per-request timeout |
 | `--version` | Print the version |
 
 ### Exit codes
@@ -144,7 +159,8 @@ and report TOML keys as package names.
 |---|---|
 | `0` | Nothing blocked (warnings may still be present) |
 | `1` | At least one package blocked |
-| `2` | Usage error, unreadable manifest, or the registry was unreachable |
+| `2` | Usage error, unreadable manifest, or a name could not be checked |
+| `3` | Nothing was scanned — no dependencies found. Distinct from "checked and clean". |
 
 ### Caching
 

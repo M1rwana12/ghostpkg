@@ -54,7 +54,10 @@ DIRECT_REFERENCE = re.compile(r"^\s*[A-Za-z0-9][A-Za-z0-9._-]*\s*(\[[^\]]*\])?\s
 
 REQUIREMENTS_NAMES = ("requirements", "constraints", "dev-requirements", "test-requirements")
 
-SUPPORTED = "requirements*.txt, *.in, pyproject.toml, package.json"
+SUPPORTED = (
+    "requirements*.txt, *.in, pyproject.toml, package.json, "
+    "package-lock.json, poetry.lock, uv.lock"
+)
 
 MAX_INCLUDE_DEPTH = 10
 
@@ -180,6 +183,106 @@ def parse_package_json(text: str, source: str | None = None) -> list[Requirement
             found.append(
                 Requirement(name=name, specifier=str(spec) if spec else None, source=source)
             )
+    return found
+
+
+def parse_package_lock(text: str, source: str | None = None) -> list[Requirement]:
+    """Dependencies from an npm `package-lock.json`, both layouts.
+
+    Lockfiles matter more than manifests here: CI installs from the lockfile,
+    so it is the list of names that actually get fetched -- including
+    transitive ones a manifest never mentions.
+
+    v2/v3 key `packages` by install path (`node_modules/foo`,
+    `node_modules/a/node_modules/b`); v1 nests `dependencies`. The root entry
+    has an empty key and is the project itself, not a dependency.
+    """
+    data = json.loads(text)
+    if not isinstance(data, dict):
+        raise ValueError("package-lock.json does not contain an object")
+
+    found: list[Requirement] = []
+    seen: set[tuple[str, str | None]] = set()
+
+    def add(name: str, version: str | None) -> None:
+        key = (name, version)
+        if not name or key in seen:
+            return
+        seen.add(key)
+        found.append(Requirement(name=name, specifier=version, source=source))
+
+    packages = data.get("packages")
+    if isinstance(packages, dict):
+        for path, entry in packages.items():
+            if not path or not isinstance(entry, dict):
+                continue  # "" is the project itself
+            if entry.get("link"):
+                continue  # a workspace symlink, not a registry package
+            # The name is the path after the last node_modules segment, which
+            # keeps scopes intact: node_modules/@types/node -> @types/node.
+            marker = "node_modules/"
+            name = path[path.rfind(marker) + len(marker) :] if marker in path else path
+            add(str(entry.get("name") or name), entry.get("version"))
+
+    def walk(section: dict) -> None:
+        for name, entry in section.items():
+            if not isinstance(entry, dict):
+                continue
+            add(str(name), entry.get("version"))
+            nested = entry.get("dependencies")
+            if isinstance(nested, dict):
+                walk(nested)
+
+    legacy = data.get("dependencies")
+    if isinstance(legacy, dict):
+        walk(legacy)
+
+    return found
+
+
+# `[[package]]` array-of-tables entries, as used by both poetry.lock and
+# uv.lock. The shape is regular enough to read without a TOML parser, which
+# matters because tomllib is 3.11+ and 3.9 is supported.
+LOCK_ENTRY_KEY = re.compile(r'^(name|version)\s*=\s*["\']([^"\']+)["\']')
+
+
+def parse_toml_lock(text: str, source: str | None = None) -> list[Requirement]:
+    """Dependencies from a `poetry.lock` or `uv.lock`."""
+    found: list[Requirement] = []
+    seen: set[str] = set()
+    in_package = False
+    name: str | None = None
+    version: str | None = None
+
+    def flush() -> None:
+        nonlocal name, version
+        if name and name.lower() != "python" and name not in seen:
+            seen.add(name)
+            found.append(Requirement(name=name, specifier=version, source=source))
+        name = version = None
+
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if line.startswith("[["):
+            flush()
+            in_package = line.startswith("[[package]]")
+            continue
+        if line.startswith("["):
+            flush()
+            in_package = False
+            continue
+        if not in_package:
+            continue
+        match = LOCK_ENTRY_KEY.match(line)
+        if match:
+            if match.group(1) == "name":
+                # A second `name` means a new entry began without a header.
+                if name is not None:
+                    flush()
+                name = match.group(2)
+            else:
+                version = match.group(2)
+    flush()
     return found
 
 
@@ -344,6 +447,10 @@ def load_manifest(path: Path) -> tuple[list[Requirement], str]:
 
     if name == "package.json":
         return parse_package_json(path.read_text(encoding="utf-8"), source), "npm"
+    if name == "package-lock.json":
+        return parse_package_lock(path.read_text(encoding="utf-8"), source), "npm"
+    if name in ("poetry.lock", "uv.lock"):
+        return parse_toml_lock(path.read_text(encoding="utf-8"), source), "pypi"
     if name == "pyproject.toml":
         return parse_pyproject(path.read_text(encoding="utf-8"), source), "pypi"
     if _looks_like_requirements(name):

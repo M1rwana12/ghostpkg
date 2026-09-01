@@ -243,6 +243,33 @@ class TestScanArgumentHandling:
     def test_missing_file_is_refused(self, tmp_path):
         assert main(["scan", str(tmp_path / "nope.txt")]) == 2
 
+    def test_an_empty_manifest_is_not_a_pass(self, tmp_path):
+        """Exit 0 would read as "checked, all clean" in CI."""
+        path = tmp_path / "requirements.txt"
+        path.write_text("# nothing here\n", encoding="utf-8")
+        assert main(["scan", str(path)]) == 3
+
+    def test_several_manifests_in_one_run(self, tmp_path, monkeypatch):
+        from ghostpkg.registries import PackageFacts
+
+        monkeypatch.setattr(
+            "ghostpkg.cli.fetch",
+            lambda name, ecosystem: PackageFacts(
+                name=name, ecosystem=ecosystem, exists=True,
+                age_days=4000, release_count=30, has_repo_url=True,
+            ),
+        )
+        (tmp_path / "requirements.txt").write_text("requests\n", encoding="utf-8")
+        (tmp_path / "package.json").write_text(
+            '{"dependencies": {"express": "^4"}}', encoding="utf-8"
+        )
+        assert main([
+            "scan",
+            str(tmp_path / "requirements.txt"),
+            str(tmp_path / "package.json"),
+            "--no-cache",
+        ]) == 0
+
 
 class TestPeerDependenciesAreRead:
     def test_peer_dependencies_included(self):

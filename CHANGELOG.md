@@ -6,6 +6,27 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-01
+
+### Added
+- **Lockfiles.** `package-lock.json` (both the v1 nested and v2/v3 `packages`
+  layouts), `poetry.lock` and `uv.lock`. This matters more than the manifest
+  formats already supported: CI installs from the lockfile, so it holds the
+  names that actually get fetched, including transitive ones a manifest never
+  mentions. Every entry is version-pinned, so all of them are checkable.
+- **`scan` takes several files at once**, and they may be different
+  ecosystems: `ghostpkg scan requirements.txt package.json package-lock.json`.
+  A dependency repeated across files costs one lookup, not one per file.
+- **Retry with backoff on rate limiting.** Registries answer 429 and 503 under
+  load, and giving up immediately turned a busy moment into a failed run.
+  `Retry-After` is honoured when sent, capped at 30 seconds.
+- `--workers N` and `--timeout SECONDS`, which were fixed constants.
+
+### Changed
+- **New exit code `3`: nothing was scanned.** A manifest that yielded no
+  dependencies exited `0`, which reads as "checked, all clean" in CI. `0` now
+  means checked and clean, `3` means there was nothing to check.
+
 ## [0.8.0] - 2026-09-01
 
 ### Added
@@ -283,7 +304,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.9.0
 [0.8.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.8.0
 [0.7.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.7.0
 [0.6.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.6.0

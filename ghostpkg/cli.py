@@ -14,11 +14,15 @@ from .assess import NEW_DAYS, Finding, Verdict, assess
 from .cache import Cache
 from .inspection import InspectionError, inspect_package
 from .manifests import Requirement, UnsupportedManifest, load_manifest, parse_requirements
+from . import registries
 from .registries import RegistryError, fetch
 
 EXIT_OK = 0
 EXIT_BLOCKED = 1
 EXIT_ERROR = 2
+#: Nothing was found to check. Distinct from "checked, all clean", because a
+#: manifest we failed to understand used to exit 0 and read as a pass in CI.
+EXIT_NOTHING_SCANNED = 3
 
 MAX_WORKERS = 8
 
@@ -102,6 +106,7 @@ def evaluate(
     strict: bool,
     cache: Cache | None = None,
     deep: bool = False,
+    workers: int = MAX_WORKERS,
 ) -> list[Finding]:
     items = [
         r if isinstance(r, Requirement) else Requirement(name=r) for r in requirements
@@ -165,7 +170,7 @@ def evaluate(
     unique: dict[tuple[str, str | None], Requirement] = {}
     for item in items:
         unique.setdefault((item.name, item.specifier), item)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         results = dict(zip(unique, pool.map(one, unique.values())))
     if cache:
         cache.save()
@@ -190,7 +195,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     scan = sub.add_parser("scan", help="check every dependency in a manifest")
     scan.add_argument(
-        "path", type=Path, help="requirements*.txt, pyproject.toml or package.json"
+        "paths",
+        type=Path,
+        nargs="+",
+        help="one or more manifests or lockfiles; mixed ecosystems are fine",
     )
 
     for command in (check, scan):
@@ -203,6 +211,20 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("-q", "--quiet", action="store_true", help="hide passing packages")
         command.add_argument(
             "--no-cache", action="store_true", help="ignore and do not write the cache"
+        )
+        command.add_argument(
+            "--workers",
+            type=int,
+            default=MAX_WORKERS,
+            metavar="N",
+            help=f"parallel lookups (default {MAX_WORKERS})",
+        )
+        command.add_argument(
+            "--timeout",
+            type=int,
+            default=None,
+            metavar="SECONDS",
+            help="per-request timeout",
         )
         command.add_argument(
             "--deep",
@@ -225,34 +247,52 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ghostpkg: {'removed ' + str(cache.path) if removed else 'nothing to remove'}")
         return EXIT_OK
 
+    if args.timeout:
+        registries.TIMEOUT = args.timeout
+
+    # Group by ecosystem so several manifests are looked up together and a
+    # dependency repeated across them costs one request, not one per file.
+    by_ecosystem: "dict[str, list]" = {}
+
     if args.command == "scan":
-        if not args.path.exists():
-            print(f"ghostpkg: no such file: {args.path}", file=sys.stderr)
-            return EXIT_ERROR
-        if args.path.is_dir():
-            print(
-                f"ghostpkg: {args.path} is a directory; pass a manifest file",
-                file=sys.stderr,
-            )
-            return EXIT_ERROR
-        try:
-            names, ecosystem = load_manifest(args.path)
-        except UnsupportedManifest as exc:
-            print(f"ghostpkg: {exc}", file=sys.stderr)
-            return EXIT_ERROR
-        except (json.JSONDecodeError, UnicodeDecodeError, ValueError, OSError) as exc:
-            print(f"ghostpkg: could not parse {args.path}: {exc}", file=sys.stderr)
-            return EXIT_ERROR
-        if not names:
-            print(f"ghostpkg: no dependencies found in {args.path}", file=sys.stderr)
-            return EXIT_OK
+        for path in args.paths:
+            if not path.exists():
+                print(f"ghostpkg: no such file: {path}", file=sys.stderr)
+                return EXIT_ERROR
+            if path.is_dir():
+                print(
+                    f"ghostpkg: {path} is a directory; pass a manifest file",
+                    file=sys.stderr,
+                )
+                return EXIT_ERROR
+            try:
+                found, ecosystem = load_manifest(path)
+            except UnsupportedManifest as exc:
+                print(f"ghostpkg: {exc}", file=sys.stderr)
+                return EXIT_ERROR
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError, OSError) as exc:
+                print(f"ghostpkg: could not parse {path}: {exc}", file=sys.stderr)
+                return EXIT_ERROR
+            by_ecosystem.setdefault(ecosystem, []).extend(found)
+        if not any(by_ecosystem.values()):
+            where = ", ".join(str(p) for p in args.paths)
+            print(f"ghostpkg: no dependencies found in {where}", file=sys.stderr)
+            # Not the same as "checked, all clean": a manifest we failed to
+            # understand used to exit 0 and read as a pass in CI.
+            return EXIT_NOTHING_SCANNED
     else:
         # Accept a pin on the command line too: `ghostpkg check requests==2.31.0`.
-        names = parse_requirements("\n".join(args.names))
-        ecosystem = args.ecosystem
+        by_ecosystem[args.ecosystem] = parse_requirements("\n".join(args.names))
 
     cache = Cache(enabled=not args.no_cache)
-    findings = evaluate(names, ecosystem, args.strict, cache, args.deep)
+    findings: list[Finding] = []
+    for ecosystem, requirements in by_ecosystem.items():
+        if requirements:
+            findings.extend(
+                evaluate(
+                    requirements, ecosystem, args.strict, cache, args.deep, args.workers
+                )
+            )
 
     if args.json:
         print(
