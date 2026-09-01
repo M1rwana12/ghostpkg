@@ -104,6 +104,7 @@ Requires Python 3.9+. Tested on Linux, macOS and Windows.
 
 ```bash
 ghostpkg check fastapi-middleware pandas-utils
+ghostpkg check requests==99.99.99          # pins are checked too
 ghostpkg check react-router-dom-utils -e npm
 ```
 
@@ -187,6 +188,7 @@ $ ghostpkg check somepkgthatisnotreal9911 --json
 | Signal | Verdict | Why |
 |---|---|---|
 | Not in the registry | 🔴 **Blocked** | The name is a ghost. There is nothing to install, and this is exactly what a hallucination looks like. |
+| A pinned version that does not exist | 🔴 **Blocked** | `requests==99.99.99`. A model invents versions as readily as names, and the registry lists every real one, so this is a lookup rather than a heuristic. Only exact pins are checked — a range like `>=2.31` or `^4.18.0` may be satisfied by some other version. |
 | First published < 90 days ago | 🟡 Warning | Attackers register fast. So do honest authors — hence a warning, not a block. |
 | First published < 1 year ago | 🟡 Warning | Weaker version of the same signal. |
 | Only one release | 🟡 Warning | Squats are usually published once and abandoned. |
@@ -318,13 +320,18 @@ ghostpkg scan requirements.txt --deep
 ```
 
 `--deep` downloads the archive **only for recently published packages**, reads
-only `setup.py` from it (or the install hooks out of `package.json`), and
-pattern-matches the text. **Nothing is ever executed.** Archive and member sizes
+only `setup.py` from it (or the install hooks out of `package.json`, plus any
+script those hooks name), and pattern-matches the text. npm hooks are matched
+against shell-command patterns rather than source-code ones, because that is
+what they are. If a package cannot be inspected — no source archive, or an
+archive over the size limit — it says so rather than passing quietly. **Nothing is ever executed.** Archive and member sizes
 are capped, so a decompression bomb cannot exhaust memory.
 
 | Signal | What it means |
 |---|---|
 | `exfiltration` | Reads environment variables *and* contacts the network |
+| `pipe-to-shell` | Downloads a script and pipes it straight into a shell (npm hooks) |
+| `inline-script` | Runs code passed on the command line, e.g. `node -e` (npm hooks) |
 | `network` | Makes a network request during install |
 | `subprocess` | Runs a shell command during install |
 | `encoded-payload` | Decodes a hidden blob, or carries a large encoded string |

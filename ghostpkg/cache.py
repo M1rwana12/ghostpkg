@@ -4,10 +4,19 @@ Scanning a manifest costs one request per dependency, every time. A 200-line
 requirements.txt in CI is 200 requests on every run, which is slow for the user
 and rude to the registry.
 
-Time-to-live depends on what was cached, and the important case is the negative
-one. A name that does not exist today can be registered tomorrow -- that is the
-entire attack this tool exists to catch -- so "does not exist" is held only
-briefly. Established packages change slowly and are held far longer.
+**"Does not exist" is never cached.** That answer is the only one that blocks,
+so it must always be fresh. Caching it briefly seemed safe until a real case
+turned up: PyPI's RSS feed announces a package a moment before its JSON API
+serves it, so a lookup lands on a 404, and a legitimately published package
+was then reported as non-existent for the rest of the hour. A stale block is
+the worst failure this tool has, and a missing name is rare enough in a real
+manifest that re-checking costs almost nothing.
+
+The reverse direction argues the same way: a name that is free right now can be
+registered at any moment, and that is the entire attack. Either way, the
+blocking signal is the one that must not come from a cache.
+
+Positive answers are cached, since an established package changes slowly.
 
 Cache failures are never fatal. An unwritable or corrupt cache degrades to no
 cache at all rather than breaking a build.
@@ -29,7 +38,7 @@ from .registries import PackageFacts
 
 SCHEMA = 1
 
-TTL_MISSING = 60 * 60             # 1 hour  -- a free name can be taken any time
+TTL_MISSING = 0                   # never cached -- see the module docstring
 TTL_YOUNG = 6 * 60 * 60           # 6 hours -- facts still moving
 TTL_ESTABLISHED = 24 * 60 * 60    # 1 day   -- changes slowly
 
@@ -148,6 +157,9 @@ class Cache:
 
     def put(self, facts: PackageFacts) -> None:
         if not self.enabled:
+            return
+        # Never store a negative: it is the answer that blocks.
+        if not facts.exists:
             return
         entry = {
             "at": time.time(),

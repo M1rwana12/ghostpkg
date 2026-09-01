@@ -13,7 +13,7 @@ from . import __version__
 from .assess import NEW_DAYS, Finding, Verdict, assess
 from .cache import Cache
 from .inspection import InspectionError, inspect_package
-from .manifests import UnsupportedManifest, load_manifest
+from .manifests import Requirement, UnsupportedManifest, load_manifest, parse_requirements
 from .registries import RegistryError, fetch
 
 EXIT_OK = 0
@@ -97,13 +97,18 @@ def summarise(findings: list[Finding], palette: Palette) -> None:
 
 
 def evaluate(
-    names: list[str],
+    requirements: "list[Requirement] | list[str]",
     ecosystem: str,
     strict: bool,
     cache: Cache | None = None,
     deep: bool = False,
 ) -> list[Finding]:
-    def one(name: str) -> Finding:
+    items = [
+        r if isinstance(r, Requirement) else Requirement(name=r) for r in requirements
+    ]
+
+    def one(requirement: Requirement) -> Finding:
+        name = requirement.name
         # A failure on one name must not discard the whole scan. It used to:
         # pool.map re-raised the first exception while iterating, throwing away
         # every confirmed BLOCK alongside it and skipping the cache write, so
@@ -124,32 +129,47 @@ def evaluate(
             )
 
         signals = None
+        not_inspected = None
         # Only young packages are worth the download: a registered slopsquat is
         # new by definition, and inspecting everything would make a scan slow
         # for no gain. A compromised established package is a different threat
         # and is out of scope -- SECURITY.md says so.
-        if (
+        wanted = (
             deep
             and facts.exists
-            and facts.archive_url
             and facts.age_days is not None
             and facts.age_days < NEW_DAYS
-        ):
+        )
+        if wanted and not facts.archive_url:
+            not_inspected = "no source archive published"
+        elif wanted:
             try:
                 signals = inspect_package(facts.archive_url, ecosystem)
-            except InspectionError:
-                signals = None
+            except InspectionError as exc:
+                not_inspected = str(exc)
 
-        return assess(facts, strict=strict, signals=signals)
+        finding = assess(
+            facts, strict=strict, signals=signals, specifier=requirement.specifier
+        )
+        # Saying nothing would let "could not inspect" read as "inspected and
+        # clean" -- and padding an archive past the size limit would then be a
+        # way to switch --deep off from the outside.
+        if not_inspected and not finding.is_blocked:
+            finding.reasons.append(f"install scripts not inspected: {not_inspected}")
+            if finding.verdict is Verdict.OK:
+                finding.verdict = Verdict.WARN
+        return finding
 
-    # Look each distinct name up once. A manifest can repeat a name, and
-    # following -r includes makes that more likely.
-    unique = list(dict.fromkeys(names))
+    # Look each distinct (name, pin) pair up once. A manifest can repeat a
+    # name, and following -r includes makes that more likely.
+    unique: dict[tuple[str, str | None], Requirement] = {}
+    for item in items:
+        unique.setdefault((item.name, item.specifier), item)
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-        results = dict(zip(unique, pool.map(one, unique)))
+        results = dict(zip(unique, pool.map(one, unique.values())))
     if cache:
         cache.save()
-    return [results[name] for name in names]
+    return [results[(item.name, item.specifier)] for item in items]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -163,7 +183,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     check = sub.add_parser("check", help="check one or more package names")
-    check.add_argument("names", nargs="+")
+    check.add_argument(
+        "names", nargs="+", help="names, optionally pinned: requests==2.31.0"
+    )
     check.add_argument("-e", "--ecosystem", choices=("pypi", "npm"), default="pypi")
 
     scan = sub.add_parser("scan", help="check every dependency in a manifest")
@@ -225,7 +247,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"ghostpkg: no dependencies found in {args.path}", file=sys.stderr)
             return EXIT_OK
     else:
-        names, ecosystem = args.names, args.ecosystem
+        # Accept a pin on the command line too: `ghostpkg check requests==2.31.0`.
+        names = parse_requirements("\n".join(args.names))
+        ecosystem = args.ecosystem
 
     cache = Cache(enabled=not args.no_cache)
     findings = evaluate(names, ecosystem, args.strict, cache, args.deep)

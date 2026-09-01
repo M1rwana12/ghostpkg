@@ -27,17 +27,23 @@ from ghostpkg.manifests import (
 from ghostpkg.registries import PackageFacts, RegistryError
 
 
+def names(requirements):
+    """Just the names, for assertions that do not care about versions."""
+    return [r.name for r in requirements]
+
+
+
 class TestPrefixFilterDroppedRealPackages:
     """Lines starting with `http` were skipped to drop bare URLs. That also
     dropped `httpx`, `httpcore` and `httplib2` -- silently."""
 
     @pytest.mark.parametrize("name", ["httpx", "httpcore", "httplib2", "httpretty"])
     def test_http_prefixed_names_are_kept(self, name):
-        assert parse_requirements(f"{name}==1.0\n") == [name]
+        assert names(parse_requirements(f"{name}==1.0\n")) == [name]
 
     def test_bare_urls_are_still_skipped(self):
         text = "https://example.com/pkg-1.0.tar.gz\nrequests\n"
-        assert parse_requirements(text) == ["requests"]
+        assert names(parse_requirements(text)) == ["requests"]
 
 
 class TestDirectReferencesAndPrivateIndexes:
@@ -46,10 +52,10 @@ class TestDirectReferencesAndPrivateIndexes:
 
     def test_direct_reference_is_skipped(self):
         text = "internal-lib @ git+https://github.com/acme/internal-lib\nrequests\n"
-        assert parse_requirements(text) == ["requests"]
+        assert names(parse_requirements(text)) == ["requests"]
 
     def test_direct_reference_with_extras_is_skipped(self):
-        assert parse_requirements("internal[all] @ https://x/y.whl\n") == []
+        assert names(parse_requirements("internal[all] @ https://x/y.whl\n")) == []
 
     @pytest.mark.parametrize(
         "line",
@@ -62,7 +68,7 @@ class TestDirectReferencesAndPrivateIndexes:
         ],
     )
     def test_option_and_path_lines_are_skipped(self, line):
-        assert parse_requirements(f"{line}\nrequests\n") == ["requests"]
+        assert names(parse_requirements(f"{line}\nrequests\n")) == ["requests"]
 
 
 class TestManifestDetection:
@@ -88,7 +94,7 @@ class TestManifestDetection:
     def test_real_requirements_filenames_are_accepted(self, tmp_path, filename):
         path = tmp_path / filename
         path.write_text("requests\n", encoding="utf-8")
-        assert load_manifest(path) == (["requests"], "pypi")
+        assert (names(load_manifest(path)[0]), load_manifest(path)[1]) == (["requests"], "pypi")
 
 
 class TestIncludesAreFollowed:
@@ -97,23 +103,23 @@ class TestIncludesAreFollowed:
     def test_include_is_read(self, tmp_path):
         (tmp_path / "base.txt").write_text("flask\njinja2\n", encoding="utf-8")
         (tmp_path / "requirements.txt").write_text("-r base.txt\nrequests\n", encoding="utf-8")
-        names, _ = load_manifest(tmp_path / "requirements.txt")
-        assert set(names) == {"flask", "jinja2", "requests"}
+        reqs, _ = load_manifest(tmp_path / "requirements.txt")
+        assert set(names(reqs)) == {"flask", "jinja2", "requests"}
 
     def test_constraint_include_is_read(self, tmp_path):
         (tmp_path / "c.txt").write_text("pinned-thing\n", encoding="utf-8")
         (tmp_path / "requirements.txt").write_text("-c c.txt\n", encoding="utf-8")
-        assert load_manifest(tmp_path / "requirements.txt")[0] == ["pinned-thing"]
+        assert names(load_manifest(tmp_path / "requirements.txt")[0]) == ["pinned-thing"]
 
     def test_a_cycle_terminates(self, tmp_path):
         (tmp_path / "requirements.txt").write_text("-r other.txt\na\n", encoding="utf-8")
         (tmp_path / "other.txt").write_text("-r requirements.txt\nb\n", encoding="utf-8")
-        names, _ = load_manifest(tmp_path / "requirements.txt")
-        assert set(names) == {"a", "b"}
+        reqs, _ = load_manifest(tmp_path / "requirements.txt")
+        assert set(names(reqs)) == {"a", "b"}
 
     def test_a_missing_include_is_ignored(self, tmp_path):
         (tmp_path / "requirements.txt").write_text("-r nope.txt\nrequests\n", encoding="utf-8")
-        assert load_manifest(tmp_path / "requirements.txt")[0] == ["requests"]
+        assert names(load_manifest(tmp_path / "requirements.txt")[0]) == ["requests"]
 
 
 class TestOneFailureDoesNotDiscardTheScan:
@@ -241,4 +247,4 @@ class TestScanArgumentHandling:
 class TestPeerDependenciesAreRead:
     def test_peer_dependencies_included(self):
         text = json.dumps({"dependencies": {"a": "1"}, "peerDependencies": {"b": "2"}})
-        assert set(parse_package_json(text)) == {"a", "b"}
+        assert set(names(parse_package_json(text))) == {"a", "b"}

@@ -20,10 +20,33 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 # PEP 508 name: letter/digit at each end, dots/hyphens/underscores inside.
 NAME = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)")
+
+# Everything after the name and optional extras, up to an environment marker.
+SPECIFIER = re.compile(r"^\s*(\[[^\]]*\])?\s*([^;#]*)")
+
+
+@dataclass(frozen=True)
+class Requirement:
+    """One dependency as the manifest states it.
+
+    `specifier` is kept because a hallucinated *version* is the same class of
+    mistake as a hallucinated name -- a model will happily write
+    `requests==99.99.99` -- and the registry response already lists every real
+    version, so checking costs nothing extra.
+
+    `line` is the 1-based line it came from, for pointing at it later.
+    """
+
+    name: str
+    specifier: str | None = None
+    line: int | None = None
+    source: str | None = None
+
 
 # `name @ https://...` is a direct reference: the source is stated explicitly
 # and is not the public registry, so there is nothing for us to check.
@@ -48,18 +71,19 @@ def parse_requirements(
     text: str,
     *,
     base: Path | None = None,
+    source: str | None = None,
     _seen: set[Path] | None = None,
     _depth: int = 0,
-) -> list[str]:
+) -> list[Requirement]:
     """Package names from a requirements file.
 
     Follows `-r` / `--requirement` includes when `base` is given, because a
     requirements file that pulls in `base.txt` was otherwise only half checked.
     """
     seen = _seen if _seen is not None else set()
-    names: list[str] = []
+    found: list[Requirement] = []
 
-    for raw in text.splitlines():
+    for number, raw in enumerate(text.splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
@@ -74,7 +98,7 @@ def parse_requirements(
         if line.startswith("-"):
             include = _include_target(line)
             if include and base is not None and _depth < MAX_INCLUDE_DEPTH:
-                names.extend(_read_include(include, base, seen, _depth))
+                found.extend(_read_include(include, base, seen, _depth))
             continue
 
         # A bare URL or local path, not a name we can look up.
@@ -86,9 +110,25 @@ def parse_requirements(
 
         match = NAME.match(line)
         if match:
-            names.append(match.group(1))
+            found.append(
+                Requirement(
+                    name=match.group(1),
+                    specifier=_specifier(line[match.end() :]),
+                    line=number,
+                    source=source,
+                )
+            )
 
-    return names
+    return found
+
+
+def _specifier(rest: str) -> str | None:
+    """The version constraint following a name, without extras or markers."""
+    match = SPECIFIER.match(rest)
+    if not match:
+        return None
+    text = (match.group(2) or "").strip()
+    return text or None
 
 
 def _include_target(line: str) -> str | None:
@@ -101,7 +141,9 @@ def _include_target(line: str) -> str | None:
     return None
 
 
-def _read_include(target: str, base: Path, seen: set[Path], depth: int) -> list[str]:
+def _read_include(
+    target: str, base: Path, seen: set[Path], depth: int
+) -> list[Requirement]:
     if _is_url(target):
         return []
     try:
@@ -115,20 +157,30 @@ def _read_include(target: str, base: Path, seen: set[Path], depth: int) -> list[
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return []
-    return parse_requirements(text, base=path.parent, _seen=seen, _depth=depth + 1)
+    return parse_requirements(
+        text, base=path.parent, source=str(path), _seen=seen, _depth=depth + 1
+    )
 
 
-def parse_package_json(text: str) -> list[str]:
+def parse_package_json(text: str, source: str | None = None) -> list[Requirement]:
     data = json.loads(text)
     if not isinstance(data, dict):
         raise ValueError("package.json does not contain an object")
-    names: list[str] = []
+    found: list[Requirement] = []
+    seen: set[str] = set()
     for key in ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies"):
         section = data.get(key)
-        if isinstance(section, dict):
-            names.extend(str(name) for name in section)
-    seen: set[str] = set()
-    return [n for n in names if not (n in seen or seen.add(n))]
+        if not isinstance(section, dict):
+            continue
+        for name, spec in section.items():
+            name = str(name)
+            if name in seen:
+                continue
+            seen.add(name)
+            found.append(
+                Requirement(name=name, specifier=str(spec) if spec else None, source=source)
+            )
+    return found
 
 
 def _requirement_name(spec: str) -> str | None:
@@ -139,6 +191,14 @@ def _requirement_name(spec: str) -> str | None:
         return None
     match = NAME.match(spec)
     return match.group(1) if match else None
+
+
+def _as_requirement(spec: str, source: str | None = None) -> Requirement | None:
+    name = _requirement_name(spec)
+    if name is None:
+        return None
+    rest = spec.strip()[len(name) :]
+    return Requirement(name=name, specifier=_specifier(rest), source=source)
 
 
 def _toml_arrays(text: str, table: str, key: str) -> list[str]:
@@ -203,53 +263,54 @@ def _poetry_names(section: dict) -> list[str]:
     return [name for name in section if name.lower() != "python"]
 
 
-def parse_pyproject(text: str) -> list[str]:
+def parse_pyproject(text: str, source: str | None = None) -> list[Requirement]:
     """Dependencies from PEP 621, PEP 735 and Poetry."""
     try:
         import tomllib  # noqa: PLC0415
     except ImportError:
         tomllib = None  # type: ignore[assignment]
 
-    names: list[str] = []
+    found: list[Requirement] = []
+
+    def add(spec: str) -> None:
+        requirement = _as_requirement(spec, source)
+        if requirement is not None:
+            found.append(requirement)
+
+    def add_name(name: str) -> None:
+        if name.lower() != "python":
+            found.append(Requirement(name=name, source=source))
 
     if tomllib is not None:
         data = tomllib.loads(text)
         project = data.get("project") or {}
         for spec in project.get("dependencies") or []:
-            name = _requirement_name(str(spec))
-            if name:
-                names.append(name)
+            add(str(spec))
         for group in (project.get("optional-dependencies") or {}).values():
             for spec in group:
-                name = _requirement_name(str(spec))
-                if name:
-                    names.append(name)
+                add(str(spec))
         # PEP 735, where uv and pip put dev dependencies.
         for group in (data.get("dependency-groups") or {}).values():
             if isinstance(group, list):
                 for spec in group:
                     if isinstance(spec, str):
-                        name = _requirement_name(spec)
-                        if name:
-                            names.append(name)
+                        add(spec)
         poetry = (data.get("tool") or {}).get("poetry") or {}
         for section in ("dependencies", "dev-dependencies"):
             if isinstance(poetry.get(section), dict):
-                names.extend(_poetry_names(poetry[section]))
+                for name in _poetry_names(poetry[section]):
+                    add_name(name)
         for group in (poetry.get("group") or {}).values():
             if isinstance(group, dict) and isinstance(group.get("dependencies"), dict):
-                names.extend(_poetry_names(group["dependencies"]))
+                for name in _poetry_names(group["dependencies"]):
+                    add_name(name)
     else:
         for spec in _toml_arrays(text, "project", "dependencies"):
-            name = _requirement_name(spec)
-            if name:
-                names.append(name)
+            add(spec)
         for table in ("project.optional-dependencies", "dependency-groups"):
             for key in _toml_table_keys(text, table):
                 for spec in _toml_arrays(text, table, key):
-                    name = _requirement_name(spec)
-                    if name:
-                        names.append(name)
+                    add(spec)
         # Poetry groups live in their own tables; find them by scanning headers.
         poetry_tables = ["tool.poetry.dependencies", "tool.poetry.dev-dependencies"]
         for raw in text.splitlines():
@@ -260,12 +321,11 @@ def parse_pyproject(text: str) -> list[str]:
             ):
                 poetry_tables.append(line[1:-1])
         for table in poetry_tables:
-            names.extend(
-                name for name in _toml_table_keys(text, table) if name.lower() != "python"
-            )
+            for name in _toml_table_keys(text, table):
+                add_name(name)
 
     seen: set[str] = set()
-    return [n for n in names if not (n in seen or seen.add(n))]
+    return [r for r in found if not (r.name in seen or seen.add(r.name))]
 
 
 def _looks_like_requirements(name: str) -> bool:
@@ -277,17 +337,18 @@ def _looks_like_requirements(name: str) -> bool:
     return any(word in stem for word in REQUIREMENTS_NAMES)
 
 
-def load_manifest(path: Path) -> tuple[list[str], str]:
-    """Return (package names, ecosystem). Raises UnsupportedManifest."""
+def load_manifest(path: Path) -> tuple[list[Requirement], str]:
+    """Return (requirements, ecosystem). Raises UnsupportedManifest."""
     name = path.name.lower()
+    source = str(path)
 
     if name == "package.json":
-        return parse_package_json(path.read_text(encoding="utf-8")), "npm"
+        return parse_package_json(path.read_text(encoding="utf-8"), source), "npm"
     if name == "pyproject.toml":
-        return parse_pyproject(path.read_text(encoding="utf-8")), "pypi"
+        return parse_pyproject(path.read_text(encoding="utf-8"), source), "pypi"
     if _looks_like_requirements(name):
         text = path.read_text(encoding="utf-8")
-        return parse_requirements(text, base=path.parent), "pypi"
+        return parse_requirements(text, base=path.parent, source=source), "pypi"
 
     raise UnsupportedManifest(
         f"don't know how to read {path.name!r}. Supported: {SUPPORTED}"

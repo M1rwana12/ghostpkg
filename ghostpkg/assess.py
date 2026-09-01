@@ -15,6 +15,7 @@ that installs new packages.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -23,6 +24,25 @@ from .registries import PackageFacts
 
 YOUNG_DAYS = 90
 NEW_DAYS = 365
+
+# An exact pin, and only an exact pin. `>=`, `^`, `~` and wildcards describe a
+# range that the registry may satisfy with some other version, so there is
+# nothing definite to check. `==1.2.3` either exists or it does not.
+PYPI_PIN = re.compile(r"^\s*==\s*([A-Za-z0-9][A-Za-z0-9.\-+!]*)\s*$")
+NPM_PIN = re.compile(r"^\s*v?(\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.\-]+)?)\s*$")
+
+
+def exact_pin(specifier: str | None, ecosystem: str) -> str | None:
+    """The single version a specifier demands, if it demands exactly one."""
+    if not specifier:
+        return None
+    pattern = NPM_PIN if ecosystem == "npm" else PYPI_PIN
+    match = pattern.match(specifier)
+    if not match:
+        return None
+    version = match.group(1)
+    # `==1.2.*` is a range wearing a pin's clothes.
+    return None if "*" in version else version
 
 
 class Verdict(str, Enum):
@@ -88,6 +108,15 @@ def edit_distance(left: str, right: str, cutoff: int = 3) -> int:
 
 POPULAR: dict[str, frozenset[str]] = {"pypi": TOP_PYPI, "npm": TOP_NPM}
 
+# Iterating a frozenset has no defined order, so with several candidates at the
+# same distance the reported neighbour changed between runs -- `cjson` came back
+# as `ujson` or `ijson` depending on PYTHONHASHSEED. The verdict was stable and
+# only the explanation moved, but unreproducible output is a poor look on a
+# security tool. Membership tests still use the sets above.
+POPULAR_ORDERED: dict[str, tuple[str, ...]] = {
+    ecosystem: tuple(sorted(names)) for ecosystem, names in POPULAR.items()
+}
+
 MIN_COMPARABLE_LENGTH = 5
 
 
@@ -131,7 +160,7 @@ def nearest_popular(name: str, ecosystem: str = "pypi") -> tuple[str, int] | Non
 
     budget = _typo_budget(target)
     best: tuple[str, int] | None = None
-    for candidate in popular:
+    for candidate in POPULAR_ORDERED[ecosystem]:
         if abs(len(candidate) - len(target)) > budget:
             continue
         distance = edit_distance(target, candidate, cutoff=budget)
@@ -146,6 +175,7 @@ def assess(
     facts: PackageFacts,
     strict: bool = False,
     signals: "list | None" = None,
+    specifier: str | None = None,
 ) -> Finding:
     """Turn registry facts, and optionally --deep install-script signals, into
     a verdict.
@@ -168,6 +198,25 @@ def assess(
             ecosystem=facts.ecosystem,
             verdict=Verdict.BLOCK,
             reasons=[f"does not exist on {facts.ecosystem}"],
+            facts=facts,
+        )
+
+    # A pinned version that does not exist is the same class of mistake as a
+    # name that does not exist, and just as precise: the registry lists every
+    # real version, so this is a lookup, not a heuristic. It blocks for the
+    # same reason non-existence does.
+    pin = exact_pin(specifier, facts.ecosystem)
+    if pin is not None and facts.has_version(pin) is False:
+        return Finding(
+            name=facts.name,
+            ecosystem=facts.ecosystem,
+            verdict=Verdict.BLOCK,
+            reasons=[
+                f"version {pin} does not exist "
+                f"(latest is {facts.latest_version})"
+                if facts.latest_version
+                else f"version {pin} does not exist"
+            ],
             facts=facts,
         )
 

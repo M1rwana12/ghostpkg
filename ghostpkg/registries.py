@@ -41,6 +41,16 @@ class PackageFacts:
     # Where the source archive lives, for --deep install-script inspection.
     archive_url: str | None = None
     archive_size: int | None = None
+    #: Every version the registry lists. Already in the response we fetch, so
+    #: checking a pinned version costs nothing extra -- and a model inventing
+    #: `requests==99.99.99` is the same mistake as inventing the name.
+    versions: tuple[str, ...] = ()
+
+    def has_version(self, version: str) -> bool | None:
+        """True/False if we know the version list, None if we do not."""
+        if not self.versions:
+            return None
+        return version in self.versions
 
 
 def _get_json(url: str) -> dict | None:
@@ -121,6 +131,7 @@ def fetch_pypi(name: str) -> PackageFacts:
         summary=info.get("summary") or None,
         archive_url=archive_url,
         archive_size=archive_size,
+        versions=tuple(releases),
     )
 
 
@@ -152,6 +163,7 @@ def fetch_npm(name: str) -> PackageFacts:
         summary=payload.get("description") or None,
         archive_url=dist.get("tarball"),
         archive_size=dist.get("unpackedSize"),
+        versions=tuple(versions),
     )
 
 

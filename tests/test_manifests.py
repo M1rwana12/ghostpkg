@@ -18,6 +18,12 @@ from ghostpkg.manifests import (
     parse_requirements,
 )
 
+
+def names(requirements):
+    """Just the names, for assertions that do not care about versions."""
+    return [r.name for r in requirements]
+
+
 PYPROJECT = """
 [build-system]
 requires = ["hatchling"]
@@ -60,41 +66,41 @@ pytest = "^8.0"
 
 class TestPyproject:
     def test_finds_pep621_dependencies(self):
-        names = parse_pyproject(PYPROJECT)
-        assert "requests" in names
-        assert "click" in names
-        assert "rich" in names
+        found = names(parse_pyproject(PYPROJECT))
+        assert "requests" in found
+        assert "click" in found
+        assert "rich" in found
 
     def test_finds_optional_dependencies(self):
-        names = parse_pyproject(PYPROJECT)
-        assert "pytest" in names
-        assert "mypy" in names
-        assert "sphinx" in names
+        found = names(parse_pyproject(PYPROJECT))
+        assert "pytest" in found
+        assert "mypy" in found
+        assert "sphinx" in found
 
     @pytest.mark.parametrize(
         "key", ["build-backend", "name", "version", "description", "requires-python"]
     )
     def test_toml_keys_are_not_treated_as_packages(self, key):
         """The exact regression: TOML keys reported as package names."""
-        assert key not in parse_pyproject(PYPROJECT)
+        assert key not in names(parse_pyproject(PYPROJECT))
 
     def test_build_system_requires_is_not_a_dependency(self):
         """`requires` under [build-system] is a build dep, not a project one."""
-        assert "hatchling" not in parse_pyproject(PYPROJECT)
+        assert "hatchling" not in names(parse_pyproject(PYPROJECT))
 
     def test_poetry_dependencies(self):
-        names = parse_pyproject(POETRY)
-        assert "requests" in names
-        assert "httpx" in names
-        assert "pytest" in names
+        found = names(parse_pyproject(POETRY))
+        assert "requests" in found
+        assert "httpx" in found
+        assert "pytest" in found
 
     def test_poetry_python_constraint_is_skipped(self):
         """`python` is an interpreter constraint, not a package."""
-        assert "python" not in parse_pyproject(POETRY)
+        assert "python" not in names(parse_pyproject(POETRY))
 
     def test_no_duplicates(self):
-        names = parse_pyproject(PYPROJECT)
-        assert len(names) == len(set(names))
+        found = names(parse_pyproject(PYPROJECT))
+        assert len(found) == len(set(found))
 
 
 class TestFallbackParser:
@@ -118,35 +124,35 @@ class TestFallbackParser:
         monkeypatch.setattr(builtins, "__import__", fake_import)
 
     def test_fallback_finds_dependencies(self, no_tomllib):
-        names = parse_pyproject(PYPROJECT)
-        assert "requests" in names
-        assert "click" in names
-        assert "rich" in names
+        found = names(parse_pyproject(PYPROJECT))
+        assert "requests" in found
+        assert "click" in found
+        assert "rich" in found
 
     def test_fallback_finds_optional_dependencies(self, no_tomllib):
-        names = parse_pyproject(PYPROJECT)
-        assert "pytest" in names
-        assert "sphinx" in names
+        found = names(parse_pyproject(PYPROJECT))
+        assert "pytest" in found
+        assert "sphinx" in found
 
     def test_fallback_ignores_toml_keys(self, no_tomllib):
-        names = parse_pyproject(PYPROJECT)
+        found = names(parse_pyproject(PYPROJECT))
         for key in ("build-backend", "name", "version", "requires-python"):
-            assert key not in names
+            assert key not in found
 
     def test_fallback_reads_poetry(self, no_tomllib):
-        names = parse_pyproject(POETRY)
-        assert "requests" in names
-        assert "python" not in names
+        found = names(parse_pyproject(POETRY))
+        assert "requests" in found
+        assert "python" not in found
 
 
 class TestRequirements:
     def test_basic(self):
         text = "requests==2.31.0\nflask>=3.0\n\n# comment\nnumpy\n"
-        assert parse_requirements(text) == ["requests", "flask", "numpy"]
+        assert names(parse_requirements(text)) == ["requests", "flask", "numpy"]
 
     def test_skips_flags_and_urls(self):
         text = "-r base.txt\n--index-url https://example.com\ngit+https://x/y\nrequests\n"
-        assert parse_requirements(text) == ["requests"]
+        assert names(parse_requirements(text)) == ["requests"]
 
 
 class TestPackageJson:
@@ -158,26 +164,26 @@ class TestPackageJson:
                 "optionalDependencies": {"fsevents": "^2"},
             }
         )
-        assert set(parse_package_json(text)) == {"express", "jest", "fsevents"}
+        assert set(names(parse_package_json(text))) == {"express", "jest", "fsevents"}
 
 
 class TestDetection:
     def test_pyproject_is_recognised(self, tmp_path):
         p = tmp_path / "pyproject.toml"
         p.write_text(PYPROJECT, encoding="utf-8")
-        names, ecosystem = load_manifest(p)
+        reqs, ecosystem = load_manifest(p)
         assert ecosystem == "pypi"
-        assert "requests" in names
+        assert "requests" in names(reqs)
 
     def test_package_json_is_npm(self, tmp_path):
         p = tmp_path / "package.json"
         p.write_text('{"dependencies": {"express": "^4"}}', encoding="utf-8")
-        assert load_manifest(p) == (["express"], "npm")
+        assert (names(load_manifest(p)[0]), load_manifest(p)[1]) == (["express"], "npm")
 
     def test_requirements_variants(self, tmp_path):
         p = tmp_path / "requirements-dev.txt"
         p.write_text("pytest\n", encoding="utf-8")
-        assert load_manifest(p) == (["pytest"], "pypi")
+        assert (names(load_manifest(p)[0]), load_manifest(p)[1]) == (["pytest"], "pypi")
 
     def test_unknown_file_is_refused_not_guessed(self, tmp_path):
         """Refusing beats guessing: guessing is what produced the TOML bug."""

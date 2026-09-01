@@ -1,8 +1,10 @@
 """Tests for the registry lookup cache.
 
-The security-relevant part is the time-to-live on a negative result. A name that
-does not exist today can be registered tomorrow, and that is precisely the attack
-ghostpkg exists to catch, so "does not exist" must not be held for long.
+The security-relevant part is that a negative result is never cached at all.
+"Does not exist" is the only answer that blocks, so it must always be fresh --
+in both directions. A free name can be registered at any moment, which is the
+attack; and a just-published package can 404 for a moment, which produced a
+real false block before this rule existed.
 """
 
 import json
@@ -41,10 +43,15 @@ def cache(tmp_path):
 
 
 class TestTimeToLive:
-    def test_missing_package_is_held_briefly(self):
-        """The attack is registering a name that is free right now."""
-        assert ttl_for(facts(exists=False)) == TTL_MISSING
-        assert TTL_MISSING <= 60 * 60
+    def test_a_missing_package_is_never_cached(self):
+        """The one answer that blocks must always be fresh.
+
+        Caching it produced a real false block: PyPI's RSS announces a package
+        a moment before its JSON API serves it, so a lookup 404s and the newly
+        published package was reported non-existent for the rest of the hour.
+        """
+        assert TTL_MISSING == 0
+        assert ttl_for(facts(exists=False)) == 0
 
     def test_missing_is_shorter_than_anything_else(self):
         assert TTL_MISSING < TTL_YOUNG < TTL_ESTABLISHED
@@ -86,13 +93,17 @@ class TestRoundTrip:
         assert cache.get("pypi", "express") is None
 
     def test_expired_entry_is_a_miss(self, cache, tmp_path):
-        cache.put(facts(name="requests", exists=False))
+        cache.put(facts(name="requests"))
         cache.save()
         raw = json.loads((tmp_path / "registry.json").read_text(encoding="utf-8"))
         for entry in raw["entries"].values():
-            entry["at"] = time.time() - (TTL_MISSING + 60)
+            entry["at"] = time.time() - (TTL_ESTABLISHED + 60)
         (tmp_path / "registry.json").write_text(json.dumps(raw), encoding="utf-8")
         assert Cache(directory=tmp_path).get("pypi", "requests") is None
+
+    def test_a_negative_result_is_not_written(self, cache):
+        cache.put(facts(name="ghost-package", exists=False))
+        assert cache.get("pypi", "ghost-package") is None
 
     def test_expired_entries_are_dropped_on_save(self, cache, tmp_path):
         cache.put(facts(name="stale"))
