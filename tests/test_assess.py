@@ -7,6 +7,7 @@ and cannot break when a real package changes.
 import pytest
 
 from ghostpkg.assess import Verdict, assess, edit_distance, nearest_popular
+from ghostpkg.data import TOP_NPM, TOP_PYPI
 from ghostpkg.registries import PackageFacts
 
 
@@ -99,3 +100,65 @@ class TestEditDistance:
 
     def test_far_apart_strings_short_circuit_above_cutoff(self):
         assert edit_distance("a", "abcdefghij", cutoff=3) > 3
+
+
+class TestNpmTypoDetection:
+    """npm used to be compared against the PyPI popular list, which meant
+    `expresss` was never flagged because `express` was not in the list at all."""
+
+    def test_npm_lookalike_is_flagged(self):
+        assert nearest_popular("expresss", "npm") == ("express", 1)
+
+    def test_ecosystems_do_not_cross_contaminate(self):
+        assert nearest_popular("expresss", "pypi") is None
+        assert nearest_popular("requestss", "npm") is None
+
+    def test_unknown_ecosystem_is_silent(self):
+        assert nearest_popular("whatever", "crates") is None
+
+    def test_scoped_name_compares_the_package_part(self):
+        assert nearest_popular("@evil/expresss", "npm") == ("express", 1)
+
+    def test_legitimate_scoped_packages_pass(self):
+        assert nearest_popular("@types/node", "npm") is None
+        assert nearest_popular("@babel/core", "npm") is None
+
+    def test_very_short_names_are_not_compared(self):
+        """Below five characters the name space is too dense to discriminate:
+        'core' sits one edit from 'cors'."""
+        assert nearest_popular("chak", "npm") is None
+
+
+class TestTranspositions:
+    """Swapping two adjacent characters is the commonest typosquat shape, and
+    plain Levenshtein scores it as two edits -- outside the budget for short
+    names, which let every one of these through."""
+
+    @pytest.mark.parametrize(
+        "typo,real,ecosystem",
+        [
+            ("recat", "react", "npm"),
+            ("lodahs", "lodash", "npm"),
+            ("webpakc", "webpack", "npm"),
+            ("reqeusts", "requests", "pypi"),
+            ("nupmy", "numpy", "pypi"),
+        ],
+    )
+    def test_transposed_names_are_caught(self, typo, real, ecosystem):
+        assert nearest_popular(typo, ecosystem) == (real, 1)
+
+    def test_transposition_costs_one_edit(self):
+        assert edit_distance("abc", "acb") == 1
+
+
+class TestNoFalsePositivesOnPopularNames:
+    """The guard that matters most. A tool that flags real packages gets
+    switched off, and then it protects nothing."""
+
+    def test_no_popular_pypi_name_is_flagged(self):
+        flagged = [n for n in TOP_PYPI if nearest_popular(n, "pypi") is not None]
+        assert flagged == []
+
+    def test_no_popular_npm_name_is_flagged(self):
+        flagged = [n for n in TOP_NPM if nearest_popular(n, "npm") is not None]
+        assert flagged == []

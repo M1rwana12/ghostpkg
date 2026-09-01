@@ -6,6 +6,33 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-01
+
+### Fixed
+- **npm typo detection did not work at all.** Lookalike names were compared
+  against the 2,000 most-downloaded *PyPI* projects regardless of ecosystem, so
+  `expresss` was never flagged as a typo of `express` -- `express` was not in
+  the list being compared against.
+
+### Added
+- A list of the 2,000 most-downloaded npm packages, built from the registry's
+  own download-count API. `nearest_popular()` now picks the list matching the
+  ecosystem.
+- Scoped npm names are compared on the part after the slash, since that is what
+  a squat targets: `@evil/expresss` is flagged, `@types/node` and `@babel/core`
+  are not.
+
+### Changed
+- Typo distance is now Damerau-Levenshtein: swapping two adjacent characters
+  counts as one edit rather than two. Transposition is the commonest typosquat
+  shape, and under plain Levenshtein `recat`, `lodahs` and `webpakc` all scored
+  two edits, which put them outside the budget for names that short. All three
+  are caught now, and the false-positive rate across both 2,000-name lists is
+  still zero -- there are tests asserting exactly that.
+- Names shorter than five characters are no longer compared at all. Below that
+  the name space is too dense for edit distance to mean anything: `core` sits
+  one edit from `cors`.
+
 ## [0.2.0] - 2026-09-01
 
 ### Fixed
@@ -60,6 +87,7 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.3.0
 [0.2.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.2.0
 [0.1.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.1.0

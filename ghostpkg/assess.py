@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
-from .data import TOP_PYPI
+from .data import TOP_NPM, TOP_PYPI
 from .registries import PackageFacts
 
 YOUNG_DAYS = 90
@@ -45,23 +45,42 @@ class Finding:
 
 
 def edit_distance(left: str, right: str, cutoff: int = 3) -> int:
-    """Levenshtein distance, abandoning early once it exceeds `cutoff`."""
+    """Damerau-Levenshtein distance, abandoning early once it exceeds `cutoff`.
+
+    Swapping two adjacent characters counts as one edit, not two. That matters
+    here more than it looks: transposition is the commonest typosquat shape --
+    `recat` for `react`, `lodahs` for `lodash`, `webpakc` for `webpack`. Plain
+    Levenshtein scores all three as two edits, which put them outside the budget
+    for names of that length and let every one of them through.
+    """
     if left == right:
         return 0
     if abs(len(left) - len(right)) > cutoff:
         return cutoff + 1
 
+    before_previous: list[int] = []
     previous = list(range(len(right) + 1))
     for i, a in enumerate(left, 1):
         current = [i]
         for j, b in enumerate(right, 1):
-            current.append(
-                min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (a != b))
-            )
+            cost = min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (a != b))
+            if (
+                i > 1
+                and j > 1
+                and a == right[j - 2]
+                and left[i - 2] == b
+            ):
+                cost = min(cost, before_previous[j - 2] + 1)
+            current.append(cost)
         if min(current) > cutoff:
             return cutoff + 1
-        previous = current
+        before_previous, previous = previous, current
     return previous[-1]
+
+
+POPULAR: dict[str, frozenset[str]] = {"pypi": TOP_PYPI, "npm": TOP_NPM}
+
+MIN_COMPARABLE_LENGTH = 5
 
 
 def _typo_budget(name: str) -> int:
@@ -74,18 +93,40 @@ def _typo_budget(name: str) -> int:
     return 2 if len(name) >= 10 else 1
 
 
-def nearest_popular(name: str, popular: frozenset[str] = TOP_PYPI) -> tuple[str, int] | None:
-    """Closest popular package name within the typo budget, if any."""
+def _comparable(name: str, ecosystem: str) -> str:
+    """The part of a name worth comparing.
+
+    An npm squat on a scoped package targets the part after the slash, since
+    the scope is usually owned by whoever it names.
+    """
     lowered = name.lower()
-    if lowered in popular:
+    if ecosystem == "npm" and lowered.startswith("@") and "/" in lowered:
+        return lowered.rsplit("/", 1)[1]
+    return lowered
+
+
+def nearest_popular(name: str, ecosystem: str = "pypi") -> tuple[str, int] | None:
+    """Closest popular package name within the typo budget, if any."""
+    popular = POPULAR.get(ecosystem)
+    if not popular:
         return None
 
-    budget = _typo_budget(lowered)
+    lowered = name.lower()
+    target = _comparable(name, ecosystem)
+
+    if lowered in popular or target in popular:
+        return None
+    # Below this length the name space is too dense for edit distance to mean
+    # anything: 'core' sits one edit from 'cors'.
+    if len(target) < MIN_COMPARABLE_LENGTH:
+        return None
+
+    budget = _typo_budget(target)
     best: tuple[str, int] | None = None
     for candidate in popular:
-        if abs(len(candidate) - len(lowered)) > budget:
+        if abs(len(candidate) - len(target)) > budget:
             continue
-        distance = edit_distance(lowered, candidate, cutoff=budget)
+        distance = edit_distance(target, candidate, cutoff=budget)
         if 0 < distance <= budget and (best is None or distance < best[1]):
             best = (candidate, distance)
             if distance == 1:
@@ -114,7 +155,7 @@ def assess(facts: PackageFacts, strict: bool = False) -> Finding:
     is_young = facts.age_days is not None and facts.age_days < NEW_DAYS
 
     if is_young:
-        neighbour = nearest_popular(facts.name)
+        neighbour = nearest_popular(facts.name, facts.ecosystem)
         if neighbour is not None:
             popular_name, distance = neighbour
             reasons.append(

@@ -170,7 +170,7 @@ $ ghostpkg check somepkgthatisnotreal9911 --json
 | First published < 1 year ago | 🟡 Warning | Weaker version of the same signal. |
 | Only one release | 🟡 Warning | Squats are usually published once and abandoned. |
 | No repository or homepage link | 🟡 Warning | Real projects almost always link to source. |
-| 1–2 characters from a popular name, **and** recently published | 🟡 Warning | Classic typosquat shape. Age matters: an old lookalike is just a package with a similar name. |
+| 1–2 edits from a popular name, **and** recently published | 🟡 Warning | Classic typosquat shape. A swap of adjacent characters counts as one edit, because `recat`/`react` is what squatters actually publish. Age matters: an old lookalike is just a package with a similar name. |
 
 Warnings are advisory by default. Nothing but non-existence blocks unless you pass
 `--strict`.
@@ -306,10 +306,10 @@ earns its keep. Use both.
 > that stand between you and it, and they are advisory. Improving this is the main
 > open problem — see [issues](https://github.com/M1rwana12/ghostpkg/issues).
 
-- Typo detection compares against the 2,000 most-downloaded PyPI projects, so a squat
-  on a less popular package won't be flagged as a lookalike.
-- npm scoped packages (`@scope/name`) are checked, but the popular-name list is
-  PyPI-derived, so npm typosquat detection is weaker.
+- Typo detection compares against the 2,000 most-downloaded projects in each
+  ecosystem, so a squat on a less popular package won't be flagged as a lookalike.
+- Names shorter than five characters are not compared at all: below that the name
+  space is too dense for edit distance to mean anything.
 - Every check is a live registry request. There is no caching yet.
 - Registry outages surface as exit code `2` rather than a silent pass — deliberately,
   but it does mean a flaky network fails your build.
