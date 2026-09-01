@@ -1,0 +1,58 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ghostpkg"
+version = "0.1.0"
+description = "Catch package names that do not exist before you install them"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+authors = [{ name = "m1rwana12", email = "senja3209@icloud.com" }]
+keywords = [
+    "security",
+    "supply-chain",
+    "slopsquatting",
+    "typosquatting",
+    "hallucination",
+    "ai",
+    "llm",
+    "pypi",
+    "npm",
+    "dependencies",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+]
+
+# No runtime dependencies, on purpose. A supply-chain security tool that
+# installs a dependency tree is not much of a security tool.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.urls]
+Homepage = "https://github.com/m1rwana12/ghostpkg"
+Issues = "https://github.com/m1rwana12/ghostpkg/issues"
+
+[project.scripts]
+ghostpkg = "ghostpkg.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ghostpkg"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,63 @@
+# --- Secrets: never commit credentials ---
+# Token/credential files
+*.token
+*.secret
+*.key
+*.pem
+*.pfx
+*.p12
+.env
+.env.*
+!.env.example
+secrets.*
+credentials.*
+auth.json
+hosts.yml
+.netrc
+_netrc
+
+# gh / git credential stores (should never be here, blocked defensively)
+.config/gh/
+.gh/
+.git-credentials
+
+# --- Windows ---
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# --- Editors / IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- Build / temp ---
+dist/
+build/
+out/
+tmp/
+temp/
+*.log
+*.tmp
+*.bak
+
+# --- Language ecosystems ---
+node_modules/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+target/
+
+# --- Local scratch (never published) ---
+scratch/
+.local/
+
+# Internal planning document -- deliberately not published.
+# It is the portfolio strategy doc, not part of this tool.
+PLAN.md
