@@ -6,6 +6,35 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-09-01
+
+### Changed
+- **`--json` now returns a versioned envelope** rather than a bare array, with
+  a tool name and version, summary counts, and `exists` / `latest_version` on
+  each finding. A consumer could not previously tell what produced the output
+  or what shape to expect.
+
+### Internal
+- Split `cli.py` (361 lines, doing four jobs) into `scanner.py` -- lookups and
+  verdicts -- and `report.py` -- presentation -- leaving the CLI to argument
+  parsing and exit codes. The two new modules need no terminal, which is what
+  a hook or an editor would want to call.
+
+### Considered and rejected: PEP 740 attestations
+The idea was to use a verified attestation to *suppress* warnings rather than
+add signals, which fits the project's constraints exactly. It did not survive
+measurement.
+
+An attestation proves **provenance, not benevolence** -- an attacker can
+publish a slopsquat through Trusted Publishing from their own repository just
+as easily. So it honestly refutes only one of the warnings, "no repository
+link", by supplying that exact missing fact.
+
+Measured across 38 packages from the live PyPI feed: 13 carried an attestation,
+8 lacked a repository link, and **2 were in both groups**. A 5% benefit for two
+extra HTTP requests per flagged package, since the data is only exposed through
+the simple API rather than the endpoint already being fetched. Not built.
+
 ## [0.13.0] - 2026-09-01
 
 ### Added
@@ -431,7 +460,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.14.0
 [0.13.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.13.0
 [0.12.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.12.0
 [0.11.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.11.0

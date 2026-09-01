@@ -1,23 +1,23 @@
-"""Command line interface."""
+"""Command line interface: argument parsing and process exit codes.
+
+The work itself lives in `scanner` (lookups and verdicts) and `report`
+(presentation), so that neither needs a terminal to be useful.
+"""
 
 from __future__ import annotations
 
 import argparse
-import concurrent.futures
 import json
-import os
 import sys
 from pathlib import Path
 
-from . import __version__
-from .assess import NEW_DAYS, Finding, Verdict, assess
+from . import __version__, registries
+from .assess import Finding
 from .cache import Cache
-from .rules import GP_NOT_INSPECTED, GP_UNCHECKED, Reason
-from .inspection import InspectionError, inspect_package
-from .manifests import Requirement, UnsupportedManifest, load_manifest, parse_requirements
+from .manifests import UnsupportedManifest, load_manifest, parse_requirements
 from .policy import PolicyError, apply as apply_policy, load as load_policy
-from . import registries
-from .registries import RegistryError, fetch
+from .report import Palette, as_json, render, summarise, use_colour
+from .scanner import DEFAULT_WORKERS, evaluate
 
 EXIT_OK = 0
 EXIT_BLOCKED = 1
@@ -25,161 +25,6 @@ EXIT_ERROR = 2
 #: Nothing was found to check. Distinct from "checked, all clean", because a
 #: manifest we failed to understand used to exit 0 and read as a pass in CI.
 EXIT_NOTHING_SCANNED = 3
-
-MAX_WORKERS = 8
-
-
-def _use_colour(stream) -> bool:
-    if os.environ.get("NO_COLOR"):
-        return False
-    return hasattr(stream, "isatty") and stream.isatty()
-
-
-class Palette:
-    def __init__(self, enabled: bool) -> None:
-        self.enabled = enabled
-
-    def _wrap(self, code: str, text: str) -> str:
-        return f"\033[{code}m{text}\033[0m" if self.enabled else text
-
-    def red(self, text: str) -> str:
-        return self._wrap("31;1", text)
-
-    def yellow(self, text: str) -> str:
-        return self._wrap("33;1", text)
-
-    def green(self, text: str) -> str:
-        return self._wrap("32", text)
-
-    def dim(self, text: str) -> str:
-        return self._wrap("2", text)
-
-
-MARKS = {
-    Verdict.BLOCK: ("BLOCKED", "red"),
-    Verdict.ERROR: ("ERROR", "red"),
-    Verdict.WARN: ("WARNING", "yellow"),
-    Verdict.OK: ("ok", "green"),
-}
-
-
-def render(findings: list[Finding], palette: Palette, quiet: bool) -> None:
-    for finding in findings:
-        label, colour = MARKS[finding.verdict]
-        paint = getattr(palette, colour)
-        if finding.verdict is Verdict.OK:
-            if quiet:
-                continue
-            detail = ""
-            if finding.facts and finding.facts.age_days is not None:
-                years = finding.facts.age_days / 365.0
-                detail = palette.dim(
-                    f"  ({finding.facts.release_count} releases, {years:.1f}y old)"
-                )
-            print(f"  {paint(label):<8} {finding.name}{detail}")
-            continue
-
-        print(f"  {paint(label):<8} {finding.name}")
-        for reason in finding.reasons:
-            print(f"           {palette.dim('- ' + reason)}")
-
-
-def summarise(findings: list[Finding], palette: Palette) -> None:
-    blocked = [f for f in findings if f.verdict is Verdict.BLOCK]
-    warned = [f for f in findings if f.verdict is Verdict.WARN]
-    errored = [f for f in findings if f.verdict is Verdict.ERROR]
-
-    print()
-    if blocked:
-        names = ", ".join(f.name for f in blocked)
-        print(palette.red(f"  {len(blocked)} blocked: {names}"))
-    if errored:
-        names = ", ".join(f.name for f in errored)
-        print(palette.red(f"  {len(errored)} could not be checked: {names}"))
-    if warned:
-        print(palette.yellow(f"  {len(warned)} to review by hand"))
-    if not blocked and not warned and not errored:
-        print(palette.green(f"  all {len(findings)} packages look fine"))
-
-
-def evaluate(
-    requirements: "list[Requirement] | list[str]",
-    ecosystem: str,
-    strict: bool,
-    cache: Cache | None = None,
-    deep: bool = False,
-    workers: int = MAX_WORKERS,
-) -> list[Finding]:
-    items = [
-        r if isinstance(r, Requirement) else Requirement(name=r) for r in requirements
-    ]
-
-    def one(requirement: Requirement) -> Finding:
-        name = requirement.name
-        # A failure on one name must not discard the whole scan. It used to:
-        # pool.map re-raised the first exception while iterating, throwing away
-        # every confirmed BLOCK alongside it and skipping the cache write, so
-        # the inevitable retry re-issued every lookup and made a rate-limit
-        # response self-amplifying.
-        try:
-            facts = cache.get(ecosystem, name) if cache else None
-            if facts is None:
-                facts = fetch(name, ecosystem)
-                if cache:
-                    cache.put(facts)
-        except RegistryError as exc:
-            return Finding(
-                name=name,
-                ecosystem=ecosystem,
-                verdict=Verdict.ERROR,
-                reasons=[Reason(GP_UNCHECKED, f"could not check: {exc}")],
-            )
-
-        signals = None
-        not_inspected = None
-        # Only young packages are worth the download: a registered slopsquat is
-        # new by definition, and inspecting everything would make a scan slow
-        # for no gain. A compromised established package is a different threat
-        # and is out of scope -- SECURITY.md says so.
-        wanted = (
-            deep
-            and facts.exists
-            and facts.age_days is not None
-            and facts.age_days < NEW_DAYS
-        )
-        if wanted and not facts.archive_url:
-            not_inspected = "no source archive published"
-        elif wanted:
-            try:
-                signals = inspect_package(facts.archive_url, ecosystem)
-            except InspectionError as exc:
-                not_inspected = str(exc)
-
-        finding = assess(
-            facts, strict=strict, signals=signals, specifier=requirement.specifier
-        )
-        # Saying nothing would let "could not inspect" read as "inspected and
-        # clean" -- and padding an archive past the size limit would then be a
-        # way to switch --deep off from the outside.
-        if not_inspected and not finding.is_blocked:
-            finding.reasons.append(
-                Reason(GP_NOT_INSPECTED, f"install scripts not inspected: {not_inspected}")
-            )
-            if finding.verdict is Verdict.OK:
-                finding.verdict = Verdict.WARN
-        return finding
-
-    # Look each distinct (name, pin) pair up once. A manifest can repeat a
-    # name, and following -r includes makes that more likely.
-    unique: dict[tuple[str, str | None], Requirement] = {}
-    for item in items:
-        unique.setdefault((item.name, item.specifier), item)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        results = dict(zip(unique, pool.map(one, unique.values())))
-    if cache:
-        cache.save()
-    return [results[(item.name, item.specifier)] for item in items]
-
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -225,9 +70,9 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument(
             "--workers",
             type=int,
-            default=MAX_WORKERS,
+            default=DEFAULT_WORKERS,
             metavar="N",
-            help=f"parallel lookups (default {MAX_WORKERS})",
+            help=f"parallel lookups (default {DEFAULT_WORKERS})",
         )
         command.add_argument(
             "--timeout",
@@ -321,33 +166,11 @@ def main(argv: list[str] | None = None) -> int:
         suppressed += bool(used)
 
     if args.json:
-        print(
-            json.dumps(
-                [
-                    {
-                        "name": f.name,
-                        "ecosystem": f.ecosystem,
-                        "verdict": f.verdict.value,
-                        "reasons": [
-                            {"rule": getattr(r, "rule", None), "text": str(r)}
-                            for r in f.reasons
-                        ],
-                    }
-                    for f in findings
-                ],
-                indent=2,
-            )
-        )
+        print(as_json(findings))
     else:
-        palette = Palette(_use_colour(sys.stdout))
+        palette = Palette(use_colour(sys.stdout))
         render(findings, palette, args.quiet)
-        summarise(findings, palette)
-        if suppressed:
-            print(
-                palette.dim(
-                    f"  {suppressed} suppressed by {policy_path}"
-                )
-            )
+        summarise(findings, palette, suppressed, policy_path)
 
     if any(f.is_blocked for f in findings):
         return EXIT_BLOCKED

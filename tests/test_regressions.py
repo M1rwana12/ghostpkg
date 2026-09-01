@@ -16,7 +16,8 @@ import pytest
 
 from ghostpkg.assess import Verdict
 from ghostpkg.cache import Cache
-from ghostpkg.cli import evaluate, main
+from ghostpkg.cli import main
+from ghostpkg.scanner import evaluate
 from ghostpkg.inspection import inspect_archive
 from ghostpkg.manifests import (
     UnsupportedManifest,
@@ -141,7 +142,7 @@ class TestOneFailureDoesNotDiscardTheScan:
                 raise RegistryError("HTTP 429")
             return PackageFacts(name=name, ecosystem=ecosystem, exists=name != "ghost")
 
-        monkeypatch.setattr("ghostpkg.cli.fetch", fake_fetch)
+        monkeypatch.setattr("ghostpkg.scanner.fetch", fake_fetch)
         findings = evaluate(["a", "ghost", "boom", "b"], "pypi", strict=False, cache=None)
 
         by_name = {f.name: f.verdict for f in findings}
@@ -151,7 +152,7 @@ class TestOneFailureDoesNotDiscardTheScan:
 
     def test_an_unchecked_name_is_never_a_pass(self, monkeypatch):
         monkeypatch.setattr(
-            "ghostpkg.cli.fetch",
+            "ghostpkg.scanner.fetch",
             lambda name, ecosystem: (_ for _ in ()).throw(RegistryError("offline")),
         )
         assert main(["check", "requests", "--no-cache"]) == 2
@@ -163,7 +164,7 @@ class TestOneFailureDoesNotDiscardTheScan:
             calls.append(name)
             return PackageFacts(name=name, ecosystem=ecosystem, exists=True)
 
-        monkeypatch.setattr("ghostpkg.cli.fetch", fake_fetch)
+        monkeypatch.setattr("ghostpkg.scanner.fetch", fake_fetch)
         findings = evaluate(["requests"] * 8, "pypi", strict=False, cache=None)
         assert calls == ["requests"]
         assert len(findings) == 8
@@ -262,7 +263,7 @@ class TestScanArgumentHandling:
         from ghostpkg.registries import PackageFacts
 
         monkeypatch.setattr(
-            "ghostpkg.cli.fetch",
+            "ghostpkg.scanner.fetch",
             lambda name, ecosystem: PackageFacts(
                 name=name, ecosystem=ecosystem, exists=True,
                 age_days=4000, release_count=30, has_repo_url=True,
