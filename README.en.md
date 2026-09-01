@@ -181,6 +181,52 @@ GHOSTPKG_CACHE_DIR=/tmp/gp ghostpkg check x # move it
 A corrupt, unreadable or unwritable cache degrades to no cache rather than
 breaking your run.
 
+
+### Suppressing a finding you have decided about
+
+One false positive is enough for a team to remove a security check from CI, so
+there is a way to say "we know about this one".
+
+```json
+{
+  "ignore": [
+    { "package": "acme-*", "rule": "GP001",
+      "reason": "internal, lives on our own index" },
+    { "package": "some-lib", "rule": "GP003",
+      "reason": "vendor published it last week, reviewed",
+      "expires": "2026-12-31" }
+  ]
+}
+```
+
+```bash
+ghostpkg scan requirements.txt --config ~/ghostpkg-ignore.json
+export GHOSTPKG_CONFIG=~/ghostpkg-ignore.json
+```
+
+**The file is never read from the project directory.** ghostpkg is meant to sit
+in front of a coding agent, and an agent with shell access can edit files in the
+repository it is working on -- a suppression list next to the code would be one
+the guarded thing can rewrite. It is read from `--config`, from
+`GHOSTPKG_CONFIG`, or from your config directory
+(`%APPDATA%\ghostpkg`, `~/Library/Application Support/ghostpkg`,
+`$XDG_CONFIG_HOME/ghostpkg`).
+
+A `reason` is required, an `expires` date is optional but recommended, and a
+malformed file **stops the run** rather than quietly leaving you unprotected.
+
+| Rule | Meaning |
+|---|---|
+| `GP001` | Package does not exist |
+| `GP002` | Pinned version does not exist |
+| `GP003` | Recently published |
+| `GP004` | Single release |
+| `GP005` | No repository link |
+| `GP006` | Resembles a popular package |
+| `GP007` | Install script does something unusual |
+| `GP008` | Could not be checked |
+| `GP009` | Install scripts not inspected |
+
 ### JSON output
 
 ```console

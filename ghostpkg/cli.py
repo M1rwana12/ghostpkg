@@ -12,8 +12,10 @@ from pathlib import Path
 from . import __version__
 from .assess import NEW_DAYS, Finding, Verdict, assess
 from .cache import Cache
+from .rules import GP_NOT_INSPECTED, GP_UNCHECKED, Reason
 from .inspection import InspectionError, inspect_package
 from .manifests import Requirement, UnsupportedManifest, load_manifest, parse_requirements
+from .policy import PolicyError, apply as apply_policy, load as load_policy
 from . import registries
 from .registries import RegistryError, fetch
 
@@ -130,7 +132,7 @@ def evaluate(
                 name=name,
                 ecosystem=ecosystem,
                 verdict=Verdict.ERROR,
-                reasons=[f"could not check: {exc}"],
+                reasons=[Reason(GP_UNCHECKED, f"could not check: {exc}")],
             )
 
         signals = None
@@ -160,7 +162,9 @@ def evaluate(
         # clean" -- and padding an archive past the size limit would then be a
         # way to switch --deep off from the outside.
         if not_inspected and not finding.is_blocked:
-            finding.reasons.append(f"install scripts not inspected: {not_inspected}")
+            finding.reasons.append(
+                Reason(GP_NOT_INSPECTED, f"install scripts not inspected: {not_inspected}")
+            )
             if finding.verdict is Verdict.OK:
                 finding.verdict = Verdict.WARN
         return finding
@@ -211,6 +215,12 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("-q", "--quiet", action="store_true", help="hide passing packages")
         command.add_argument(
             "--no-cache", action="store_true", help="ignore and do not write the cache"
+        )
+        command.add_argument(
+            "--config",
+            metavar="PATH",
+            help="ignore file (never read from the project directory; see "
+            "GHOSTPKG_CONFIG and the user config directory)",
         )
         command.add_argument(
             "--workers",
@@ -284,6 +294,14 @@ def main(argv: list[str] | None = None) -> int:
         # Accept a pin on the command line too: `ghostpkg check requests==2.31.0`.
         by_ecosystem[args.ecosystem] = parse_requirements("\n".join(args.names))
 
+    try:
+        policy, policy_path = load_policy(args.config)
+    except PolicyError as exc:
+        # Degrading quietly here would be indistinguishable from having no
+        # protection at all, so it is an error.
+        print(f"ghostpkg: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
     cache = Cache(enabled=not args.no_cache)
     findings: list[Finding] = []
     for ecosystem, requirements in by_ecosystem.items():
@@ -294,6 +312,11 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
 
+    suppressed = 0
+    for finding in findings:
+        _, used = apply_policy(finding, policy)
+        suppressed += bool(used)
+
     if args.json:
         print(
             json.dumps(
@@ -302,7 +325,10 @@ def main(argv: list[str] | None = None) -> int:
                         "name": f.name,
                         "ecosystem": f.ecosystem,
                         "verdict": f.verdict.value,
-                        "reasons": f.reasons,
+                        "reasons": [
+                            {"rule": getattr(r, "rule", None), "text": str(r)}
+                            for r in f.reasons
+                        ],
                     }
                     for f in findings
                 ],
@@ -313,6 +339,12 @@ def main(argv: list[str] | None = None) -> int:
         palette = Palette(_use_colour(sys.stdout))
         render(findings, palette, args.quiet)
         summarise(findings, palette)
+        if suppressed:
+            print(
+                palette.dim(
+                    f"  {suppressed} suppressed by {policy_path}"
+                )
+            )
 
     if any(f.is_blocked for f in findings):
         return EXIT_BLOCKED

@@ -6,6 +6,50 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-01
+
+### Added
+- **Stable rule identifiers.** Every finding now carries one -- `GP001` for a
+  package that does not exist, `GP002` for a pinned version that does not,
+  through to `GP009`. They appear in `--json` and are what an ignore file
+  matches on. Nothing else is possible without them: you cannot let someone say
+  "not this one" until each finding has a name that will not change.
+- **An ignore file**, so one false positive does not mean the check gets
+  removed from CI. Three decisions shape it:
+  - **It is never read from the project directory.** ghostpkg is meant to sit
+    in front of a coding agent, and an agent with shell access can edit files
+    in the repository it is working on. A `.ghostpkgignore` next to the code
+    would be a suppression list the guarded thing can rewrite. The file comes
+    from `--config`, from `GHOSTPKG_CONFIG`, or from the user's own config
+    directory.
+  - **A reason is required.** An entry nobody can justify in a sentence is one
+    nobody will dare remove later.
+  - **A malformed file is an error.** Degrading quietly to "no suppressions"
+    would be safe; degrading quietly to "no protection" would not, and from
+    outside the two are indistinguishable.
+- Entries take glob patterns, an optional `ecosystem` and `rule` to narrow
+  them, and an optional `expires` date so a suppression does not become
+  permanent by accident.
+
+Example, for the case this exists for -- a company with its own index:
+
+```json
+{
+  "ignore": [
+    { "package": "acme-*", "rule": "GP001",
+      "reason": "internal, lives on our own index" }
+  ]
+}
+```
+
+### Changed
+- Suppressing the reason that caused a block downgrades the verdict rather than
+  leaving a block with no explanation behind it. Under `--strict` every reason
+  blocks, so removing one is not enough -- which is the correct behaviour, and
+  is tested.
+- `--json` reasons are now objects with `rule` and `text` instead of bare
+  strings.
+
 ## [0.9.0] - 2026-09-01
 
 ### Added
@@ -304,7 +348,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.10.0
 [0.9.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.9.0
 [0.8.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.8.0
 [0.7.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.7.0

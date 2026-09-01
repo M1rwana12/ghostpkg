@@ -20,6 +20,16 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from .data import TOP_NPM, TOP_PYPI
+from .rules import (
+    GP_BAD_VERSION,
+    GP_INSTALL_CODE,
+    GP_LOOKALIKE,
+    GP_MISSING,
+    GP_NO_REPO,
+    GP_ONE_RELEASE,
+    GP_RECENT,
+    Reason,
+)
 from .registries import PackageFacts
 
 YOUNG_DAYS = 90
@@ -62,6 +72,10 @@ class Finding:
     verdict: Verdict
     reasons: list[str] = field(default_factory=list)
     facts: PackageFacts | None = None
+    #: Rule ids that caused a BLOCK. Kept so that suppressing the blocking
+    #: reason downgrades the verdict instead of leaving a block with no
+    #: explanation attached to it.
+    blocking: tuple[str, ...] = ()
 
     @property
     def is_blocked(self) -> bool:
@@ -197,8 +211,9 @@ def assess(
             name=facts.name,
             ecosystem=facts.ecosystem,
             verdict=Verdict.BLOCK,
-            reasons=[f"does not exist on {facts.ecosystem}"],
+            reasons=[Reason(GP_MISSING, f"does not exist on {facts.ecosystem}")],
             facts=facts,
+            blocking=(GP_MISSING,),
         )
 
     # A pinned version that does not exist is the same class of mistake as a
@@ -212,21 +227,31 @@ def assess(
             ecosystem=facts.ecosystem,
             verdict=Verdict.BLOCK,
             reasons=[
-                f"version {pin} does not exist "
-                f"(latest is {facts.latest_version})"
-                if facts.latest_version
-                else f"version {pin} does not exist"
+                Reason(
+                    GP_BAD_VERSION,
+                    f"version {pin} does not exist (latest is {facts.latest_version})"
+                    if facts.latest_version
+                    else f"version {pin} does not exist",
+                )
             ],
             facts=facts,
+            blocking=(GP_BAD_VERSION,),
         )
 
-    reasons: list[str] = []
+    reasons: list[Reason] = []
 
     if facts.age_days is not None:
         if facts.age_days < YOUNG_DAYS:
-            reasons.append(f"first published {facts.age_days} days ago")
+            reasons.append(
+                Reason(GP_RECENT, f"first published {facts.age_days} days ago")
+            )
         elif facts.age_days < NEW_DAYS:
-            reasons.append(f"first published {facts.age_days} days ago (under a year)")
+            reasons.append(
+                Reason(
+                    GP_RECENT,
+                    f"first published {facts.age_days} days ago (under a year)",
+                )
+            )
 
     is_young = facts.age_days is not None and facts.age_days < NEW_DAYS
 
@@ -250,24 +275,32 @@ def assess(
             character = "character" if distance == 1 else "characters"
             context = "recently published" if is_young else "one release, no repository"
             reasons.append(
-                f"{distance} {character} away from '{popular_name}', and {context}"
+                Reason(
+                    GP_LOOKALIKE,
+                    f"{distance} {character} away from '{popular_name}', and {context}",
+                )
             )
 
     if is_young and facts.release_count <= 1:
-        reasons.append("only one release")
+        reasons.append(Reason(GP_ONE_RELEASE, "only one release"))
 
     if is_young and not facts.has_repo_url:
-        reasons.append("no repository or homepage link")
+        reasons.append(Reason(GP_NO_REPO, "no repository or homepage link"))
 
-    install_reasons = [str(signal) for signal in (signals or [])]
+    install_reasons = [
+        Reason(GP_INSTALL_CODE, str(signal)) for signal in (signals or [])
+    ]
     reasons.extend(install_reasons)
 
+    blocking: tuple[str, ...] = ()
     if install_reasons and is_young:
         verdict = Verdict.BLOCK
+        blocking = (GP_INSTALL_CODE,)
     elif not reasons:
         verdict = Verdict.OK
     elif strict:
         verdict = Verdict.BLOCK
+        blocking = tuple({r.rule for r in reasons if hasattr(r, "rule")})
     else:
         verdict = Verdict.WARN
 
@@ -277,4 +310,5 @@ def assess(
         verdict=verdict,
         reasons=reasons,
         facts=facts,
+        blocking=blocking,
     )
