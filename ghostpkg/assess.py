@@ -28,6 +28,8 @@ from .rules import (
     GP_NO_REPO,
     GP_ONE_RELEASE,
     GP_RECENT,
+    GP_SECURITY_HOLD,
+    GP_YANKED,
     Reason,
 )
 from .registries import PackageFacts
@@ -216,6 +218,26 @@ def assess(
             blocking=(GP_MISSING,),
         )
 
+    # A name the registry took away over malware is not a heuristic: somebody
+    # published something bad under it and npm replaced it with a placeholder.
+    # Because the placeholder exists, this used to come back "ok" -- the tool
+    # said a confirmed-malicious name was fine.
+    if facts.security_hold:
+        return Finding(
+            name=facts.name,
+            ecosystem=facts.ecosystem,
+            verdict=Verdict.BLOCK,
+            reasons=[
+                Reason(
+                    GP_SECURITY_HOLD,
+                    "the registry removed this name over malware and replaced "
+                    "it with a placeholder",
+                )
+            ],
+            facts=facts,
+            blocking=(GP_SECURITY_HOLD,),
+        )
+
     # A pinned version that does not exist is the same class of mistake as a
     # name that does not exist, and just as precise: the registry lists every
     # real version, so this is a lookup, not a heuristic. It blocks for the
@@ -239,6 +261,22 @@ def assess(
         )
 
     reasons: list[Reason] = []
+
+    # A withdrawn version exists, so it is not a block -- and pip installs one
+    # anyway when it is pinned explicitly, so blocking would be stricter than
+    # the package manager itself. But the maintainer said not to use it, and
+    # usually said why, which is worth passing on. Rare enough to be signal:
+    # 0.38% of versions across a dozen popular projects.
+    if pin is not None:
+        withdrawn = facts.yanked_reason(pin)
+        if withdrawn is not None:
+            reasons.append(
+                Reason(
+                    GP_YANKED,
+                    f"version {pin} was withdrawn by its maintainer"
+                    + (f": {withdrawn}" if withdrawn else ""),
+                )
+            )
 
     if facts.age_days is not None:
         if facts.age_days < YOUNG_DAYS:

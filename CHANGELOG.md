@@ -6,6 +6,35 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-09-01
+
+Two cases the tool used to call **ok**. Both share a shape an existence check
+cannot see: the thing *exists*, so the check stops there.
+
+### Added
+- **`GP011` -- names the registry confiscated.** When npm removes a package for
+  malware it does not delete the name and does not answer 451: it republishes a
+  placeholder it owns, pointing at `github.com/npm/security-holder`. `crossenv`
+  and `ffmepg`, both real typosquat incidents, look exactly like that -- and
+  because the placeholder exists, ghostpkg reported them as **fine**. They are
+  blocked now.
+
+  Measured before shipping: 3 of 3 known confiscated names caught, **0 of 200**
+  most-downloaded npm packages flagged. Detection matches the repository URL
+  rather than the "security holding package" description, because a description
+  is free text anyone could copy.
+
+- **`GP010` -- withdrawn versions.** A pinned version the maintainer yanked is
+  reported, with the reason they gave: `requests==2.32.0` comes back with
+  "Yanked due to conflicts with CVE-2024-35195 mitigation". It warns rather than
+  blocks -- the version exists, and pip installs a yanked one when it is pinned
+  explicitly, so blocking would be stricter than the package manager itself.
+
+  **PyPI only.** npm's nearest equivalent is `deprecated`, and measurement said
+  no: `yanked` covers 0.38% of versions across a dozen popular projects, while
+  `deprecated` covers 5.78% and reaches 160 of `glob`'s 168 versions, because
+  npm uses it routinely for superseded branches. That is noise, not signal.
+
 ## [0.11.0] - 2026-09-01
 
 ### Security
@@ -367,7 +396,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.12.0
 [0.11.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.11.0
 [0.10.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.10.0
 [0.9.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.9.0

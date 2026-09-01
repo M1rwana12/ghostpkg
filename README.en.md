@@ -226,6 +226,8 @@ malformed file **stops the run** rather than quietly leaving you unprotected.
 | `GP007` | Install script does something unusual |
 | `GP008` | Could not be checked |
 | `GP009` | Install scripts not inspected |
+| `GP010` | Pinned version was withdrawn |
+| `GP011` | Registry removed this name over malware |
 
 ### JSON output
 
@@ -250,6 +252,8 @@ $ ghostpkg check somepkgthatisnotreal9911 --json
 | Signal | Verdict | Why |
 |---|---|---|
 | Not in the registry | 🔴 **Blocked** | The name is a ghost. There is nothing to install, and this is exactly what a hallucination looks like. |
+| The registry confiscated this name over malware | 🔴 **Blocked** | npm replaces such a name with a placeholder it owns rather than deleting it, so the name still resolves — which is why this used to come back "ok". `crossenv` and `ffmepg` are real examples. |
+| A pinned version the maintainer withdrew | 🟡 Warning | Reported with the reason they gave. It warns rather than blocks because pip installs a yanked version when it is pinned explicitly. PyPI only: npm's `deprecated` covers 5.78% of versions and 160 of `glob`'s 168, so it is noise. |
 | A pinned version that does not exist | 🔴 **Blocked** | `requests==99.99.99`. A model invents versions as readily as names, and the registry lists every real one, so this is a lookup rather than a heuristic. Only exact pins are checked — a range like `>=2.31` or `^4.18.0` may be satisfied by some other version. |
 | First published < 90 days ago | 🟡 Warning | Attackers register fast. So do honest authors — hence a warning, not a block. |
 | First published < 1 year ago | 🟡 Warning | Weaker version of the same signal. |

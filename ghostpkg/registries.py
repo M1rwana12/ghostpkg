@@ -54,6 +54,18 @@ class PackageFacts:
     #: checking a pinned version costs nothing extra -- and a model inventing
     #: `requests==99.99.99` is the same mistake as inventing the name.
     versions: tuple[str, ...] = ()
+    #: Versions the maintainer withdrew, mapped to the reason they gave.
+    #: PyPI only: npm's nearest equivalent is `deprecated`, which is used
+    #: routinely for superseded branches -- 160 of glob's 168 versions carry
+    #: it -- so it says nothing useful about safety.
+    yanked: "tuple[tuple[str, str], ...]" = ()
+    #: npm took this name away from whoever published malware under it and
+    #: replaced the package with a placeholder. The name therefore *exists*,
+    #: which is why it used to come back "ok".
+    security_hold: bool = False
+
+    def yanked_reason(self, version: str) -> str | None:
+        return dict(self.yanked).get(version)
 
     def has_version(self, version: str) -> bool | None:
         """True/False if we know the version list, None if we do not."""
@@ -167,7 +179,20 @@ def fetch_pypi(name: str) -> PackageFacts:
         archive_url=archive_url,
         archive_size=archive_size,
         versions=tuple(releases),
+        yanked=tuple(
+            (version, next((f.get("yanked_reason") or "") for f in files), )
+            for version, files in releases.items()
+            if files and all(f.get("yanked") for f in files)
+        ),
     )
+
+
+#: When npm removes a package for malware it does not delete the name and does
+#: not answer 451 -- it republishes a placeholder owned by npm, pointing at this
+#: repository. `crossenv` and `ffmepg`, both real typosquat incidents, look
+#: exactly like this. Matching the repository rather than the description
+#: because a description is free text anyone could copy.
+SECURITY_HOLDER = "github.com/npm/security-holder"
 
 
 def fetch_npm(name: str) -> PackageFacts:
@@ -199,6 +224,7 @@ def fetch_npm(name: str) -> PackageFacts:
         archive_url=dist.get("tarball"),
         archive_size=dist.get("unpackedSize"),
         versions=tuple(versions),
+        security_hold=SECURITY_HOLDER in str(repository.get("url") or ""),
     )
 
 

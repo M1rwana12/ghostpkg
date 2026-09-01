@@ -34,6 +34,8 @@ GP_LOOKALIKE = "GP006"        # close to a popular name
 GP_INSTALL_CODE = "GP007"     # something in the install script
 GP_UNCHECKED = "GP008"        # the registry could not be reached
 GP_NOT_INSPECTED = "GP009"    # --deep could not read the package
+GP_YANKED = "GP010"           # the pinned version was withdrawn by its maintainer
+GP_SECURITY_HOLD = "GP011"    # the registry took the name away over malware
 
 RULE_TITLES = {
     GP_MISSING: "package does not exist",
@@ -45,4 +47,6 @@ RULE_TITLES = {
     GP_INSTALL_CODE: "install script does something unusual",
     GP_UNCHECKED: "could not be checked",
     GP_NOT_INSPECTED: "install scripts not inspected",
+    GP_YANKED: "pinned version was withdrawn",
+    GP_SECURITY_HOLD: "registry removed this name over malware",
 }
