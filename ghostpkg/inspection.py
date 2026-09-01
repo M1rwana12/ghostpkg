@@ -21,6 +21,7 @@ from __future__ import annotations
 import io
 import re
 import tarfile
+import urllib.parse
 import urllib.request
 import zipfile
 from dataclasses import dataclass
@@ -195,7 +196,18 @@ def scan_text(text: str, where: str, shell: bool = False) -> list[Signal]:
     return found
 
 
+#: The archive URL comes out of the registry response, so it is data we were
+#: handed rather than a value we chose. Against public PyPI and npm that is
+#: fine, but a mirror, a proxy or a private registry could answer with
+#: `file:///etc/passwd` or an address on the internal network, and --deep would
+#: dutifully fetch and pattern-match it.
+ALLOWED_SCHEMES = ("https",)
+
+
 def _download(url: str, limit: int = MAX_ARCHIVE_BYTES) -> bytes:
+    scheme = urllib.parse.urlsplit(url).scheme.lower()
+    if scheme not in ALLOWED_SCHEMES:
+        raise InspectionError(f"refusing to fetch a {scheme or 'schemeless'} URL")
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
         with urllib.request.urlopen(request, timeout=TIMEOUT) as response:

@@ -6,6 +6,25 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-01
+
+### Security
+- **`--deep` only fetches `https`.** The archive URL comes out of the registry
+  response, so it is data we were handed rather than a value we chose. Against
+  public PyPI and npm that is fine, but a mirror, a proxy or a private registry
+  could answer with `file:///etc/passwd` or an address on the internal network,
+  and `--deep` would have fetched and pattern-matched it.
+
+### Added
+- Tests for the registry client, run against a local HTTP server so the suite
+  still needs no internet. This is where the worst bug in the project lived and
+  went untested: a connection that stalled or reset *while the body was being
+  read* escaped as a traceback and exited `1` -- the code that means "this
+  package does not exist". Covered now, along with status mapping, gzip,
+  oversized responses, retry bounds and `Retry-After` capping.
+
+**237 tests.**
+
 ## [0.10.0] - 2026-09-01
 
 ### Added
@@ -348,7 +367,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.11.0
 [0.10.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.10.0
 [0.9.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.9.0
 [0.8.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.8.0
