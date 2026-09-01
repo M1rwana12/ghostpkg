@@ -181,7 +181,7 @@ A Comprehensive Analysis of Package Hallucinations by Code Generating LLMs»*
 
 ## Внесок
 
-Issues і pull requests вітаються.
+Issues і pull requests вітаються — див. [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ```bash
 git clone https://github.com/M1rwana12/ghostpkg
@@ -189,6 +189,12 @@ cd ghostpkg
 pip install -e ".[dev]"
 pytest
 ```
+
+**Найцінніший внесок — повідомлення про хибне спрацювання.** Якщо `ghostpkg` позначив
+справжній пакет, це баг: інструмент, який кричить «вовк» на легітимні пакети, вимикають,
+і далі він не захищає нічого.
+
+Модель загроз і те, чого інструмент **не** ловить, описані в [SECURITY.md](SECURITY.md).
 
 ## Ліцензія
 

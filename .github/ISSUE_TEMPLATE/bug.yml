@@ -1,0 +1,24 @@
+name: Bug
+description: Something crashed or behaved incorrectly
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Command you ran
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ghostpkg version and OS
+      placeholder: "0.1.0, Windows 11, Python 3.12"
+    validations:
+      required: true

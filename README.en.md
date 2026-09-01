@@ -324,7 +324,7 @@ live instead.
 
 ## Contributing
 
-Issues and pull requests welcome.
+Issues and pull requests welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ```bash
 git clone https://github.com/M1rwana12/ghostpkg
@@ -332,6 +332,13 @@ cd ghostpkg
 pip install -e ".[dev]"
 pytest
 ```
+
+**The most valuable contribution is a false positive report.** If `ghostpkg` flagged
+a real package, that's a bug — a tool that cries wolf on legitimate packages gets
+turned off, and then it protects nothing.
+
+The threat model, and an explicit list of what this tool does **not** catch, is in
+[SECURITY.md](SECURITY.md).
 
 ## License
 

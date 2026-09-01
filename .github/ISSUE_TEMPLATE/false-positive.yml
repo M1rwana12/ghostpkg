@@ -1,0 +1,40 @@
+name: False positive
+description: ghostpkg flagged a package that is actually fine
+labels: ["false-positive", "bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is the most valuable report you can file. A tool that cries wolf on
+        real packages gets turned off, and then it protects nothing.
+  - type: input
+    id: package
+    attributes:
+      label: Package name
+      placeholder: some-real-package
+    validations:
+      required: true
+  - type: dropdown
+    id: ecosystem
+    attributes:
+      label: Ecosystem
+      options: [pypi, npm]
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: Paste the full output, ideally from `ghostpkg check <name> --json`.
+      render: shell
+    validations:
+      required: true
+  - type: checkboxes
+    id: strict
+    attributes:
+      label: Were you using --strict?
+      description: >
+        --strict promotes warnings to blocks and is documented as flagging
+        legitimate new packages. That behaviour is expected.
+      options:
+        - label: I was NOT using --strict

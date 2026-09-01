@@ -1,0 +1,30 @@
+name: Missed detection
+description: ghostpkg passed a package it should have caught
+labels: ["missed-detection"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Note the known limitation first: a hallucinated name that an attacker has
+        **already registered** passes the existence check by design. That case is
+        tracked as the project's main open problem — but concrete examples are
+        still very useful, so please file it.
+  - type: input
+    id: package
+    attributes:
+      label: Package name
+    validations:
+      required: true
+  - type: dropdown
+    id: ecosystem
+    attributes:
+      label: Ecosystem
+      options: [pypi, npm]
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why should it have been caught?
+    validations:
+      required: true
