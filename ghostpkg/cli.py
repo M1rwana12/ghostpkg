@@ -10,8 +10,9 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from .assess import Finding, Verdict, assess
+from .assess import NEW_DAYS, Finding, Verdict, assess
 from .cache import Cache
+from .inspection import InspectionError, inspect_package
 from .manifests import UnsupportedManifest, load_manifest
 from .registries import RegistryError, fetch
 
@@ -95,6 +96,7 @@ def evaluate(
     ecosystem: str,
     strict: bool,
     cache: Cache | None = None,
+    deep: bool = False,
 ) -> list[Finding]:
     def one(name: str) -> Finding:
         facts = cache.get(ecosystem, name) if cache else None
@@ -102,7 +104,25 @@ def evaluate(
             facts = fetch(name, ecosystem)
             if cache:
                 cache.put(facts)
-        return assess(facts, strict=strict)
+
+        signals = None
+        # Only young packages are worth the download: a registered slopsquat is
+        # new by definition, and inspecting everything would make a scan slow
+        # for no gain. A compromised established package is a different threat
+        # and is out of scope -- SECURITY.md says so.
+        if (
+            deep
+            and facts.exists
+            and facts.archive_url
+            and facts.age_days is not None
+            and facts.age_days < NEW_DAYS
+        ):
+            try:
+                signals = inspect_package(facts.archive_url, ecosystem)
+            except InspectionError:
+                signals = None
+
+        return assess(facts, strict=strict, signals=signals)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         findings = list(pool.map(one, names))
@@ -141,6 +161,12 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument(
             "--no-cache", action="store_true", help="ignore and do not write the cache"
         )
+        command.add_argument(
+            "--deep",
+            action="store_true",
+            help="download recently published packages and statically inspect "
+            "their install scripts (never executes anything)",
+        )
 
     sub.add_parser("clear-cache", help="delete the cached registry lookups")
 
@@ -176,7 +202,7 @@ def main(argv: list[str] | None = None) -> int:
 
     cache = Cache(enabled=not args.no_cache)
     try:
-        findings = evaluate(names, ecosystem, args.strict, cache)
+        findings = evaluate(names, ecosystem, args.strict, cache, args.deep)
     except RegistryError as exc:
         print(f"ghostpkg: {exc}", file=sys.stderr)
         return EXIT_ERROR

@@ -33,6 +33,9 @@ class PackageFacts:
     has_repo_url: bool = False
     latest_version: str | None = None
     summary: str | None = None
+    # Where the source archive lives, for --deep install-script inspection.
+    archive_url: str | None = None
+    archive_size: int | None = None
 
 
 def _get_json(url: str) -> dict | None:
@@ -79,6 +82,14 @@ def fetch_pypi(name: str) -> PackageFacts:
     project_urls = info.get("project_urls") or {}
     home_page = info.get("home_page") or ""
 
+    # Prefer the sdist: it carries setup.py, which a wheel does not.
+    archive_url = archive_size = None
+    for entry in payload.get("urls") or []:
+        if entry.get("packagetype") == "sdist":
+            archive_url = entry.get("url")
+            archive_size = entry.get("size")
+            break
+
     return PackageFacts(
         name=name,
         ecosystem="pypi",
@@ -88,6 +99,8 @@ def fetch_pypi(name: str) -> PackageFacts:
         has_repo_url=bool(project_urls) or bool(home_page),
         latest_version=info.get("version"),
         summary=info.get("summary") or None,
+        archive_url=archive_url,
+        archive_size=archive_size,
     )
 
 
@@ -105,6 +118,9 @@ def fetch_npm(name: str) -> PackageFacts:
     repository = payload.get("repository") or {}
     homepage = payload.get("homepage") or ""
 
+    latest = (payload.get("dist-tags") or {}).get("latest")
+    dist = ((versions.get(latest) or {}).get("dist") or {}) if latest else {}
+
     return PackageFacts(
         name=name,
         ecosystem="npm",
@@ -112,8 +128,10 @@ def fetch_npm(name: str) -> PackageFacts:
         age_days=age,
         release_count=len(versions),
         has_repo_url=bool(repository.get("url")) or bool(homepage),
-        latest_version=(payload.get("dist-tags") or {}).get("latest"),
+        latest_version=latest,
         summary=payload.get("description") or None,
+        archive_url=dist.get("tarball"),
+        archive_size=dist.get("unpackedSize"),
     )
 
 

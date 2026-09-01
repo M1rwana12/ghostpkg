@@ -20,13 +20,17 @@ what it does and does not protect against.
 
 ### What it does not catch
 
-- **A hallucinated name an attacker has already registered.** The existence check
-  passes. Only the advisory warnings stand between the user and it. This is the
-  main open problem and it is stated plainly in the README rather than hidden.
+- **A hallucinated name an attacker has already registered, when `--deep` is
+  off.** The existence check passes and only advisory warnings remain. With
+  `--deep`, install-time code is statically inspected and the usual malicious
+  shapes are caught, which measured 0 false positives across 27 established and
+  32 same-day packages while catching all 6 test shapes.
+- **Even with `--deep`:** a squat whose payload runs at *import* time rather than
+  install time, obfuscation beyond the documented patterns, and any package
+  published without an sdist, which cannot be inspected.
 - Malicious code in a package that is otherwise legitimate and established.
 - Compromise of an existing maintainer account.
-- Anything at install time. `ghostpkg` inspects registry metadata; it never
-  downloads, unpacks or executes a package.
+- Malicious behaviour at *runtime*. `--deep` reads install-time code only.
 
 ### Failure mode
 
@@ -34,9 +38,20 @@ If a registry is unreachable, `ghostpkg` exits with code `2` rather than passing
 silently. A network failure will fail your build. That is deliberate: a security
 check that quietly succeeds when it could not run is worse than no check.
 
+### How `--deep` handles untrusted archives
+
+- Archives are read **in memory**, never extracted to disk, so a path-traversal
+  entry has nothing to write to.
+- **Nothing is executed, imported or compiled.** Only named install-time files
+  are read, and only as text.
+- Downloads stop at 8 MB and individual members at 512 KB, so a decompression
+  bomb cannot exhaust memory.
+- Any failure to download or parse means "not inspected", never a pass.
+
 ### Trust boundaries
 
-- Requests go only to `pypi.org` and `registry.npmjs.org` over HTTPS.
+- Requests go only to `pypi.org`, `files.pythonhosted.org` and
+  `registry.npmjs.org` over HTTPS.
 - No telemetry, no analytics, no phoning home.
 - No runtime dependencies, so the tool's own supply chain is the Python standard
   library.

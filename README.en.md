@@ -134,6 +134,7 @@ and report TOML keys as package names.
 | `--json` | Machine-readable output for scripts and CI |
 | `-q`, `--quiet` | Hide packages that passed |
 | `--no-cache` | Neither read nor write the cache |
+| `--deep` | Download recently published packages and statically inspect their install scripts |
 | `--version` | Print the version |
 
 ### Exit codes
@@ -301,11 +302,62 @@ roughly one round trip rather than one per dependency.
 
 ---
 
+## `--deep`: inspecting install scripts
+
+The existence check cannot see the dangerous case — a name an attacker has
+**already registered**. That package exists, so it passes; and it is young, with
+one release and no repository link, which describes every honest new package
+too. **Age cannot separate them.**
+
+Install-time behaviour can. A slopsquat has to run something when it is
+installed — that is the entire point of publishing it. An honest new library
+almost never does.
+
+```bash
+ghostpkg scan requirements.txt --deep
+```
+
+`--deep` downloads the archive **only for recently published packages**, reads
+only `setup.py` from it (or the install hooks out of `package.json`), and
+pattern-matches the text. **Nothing is ever executed.** Archive and member sizes
+are capped, so a decompression bomb cannot exhaust memory.
+
+| Signal | What it means |
+|---|---|
+| `exfiltration` | Reads environment variables *and* contacts the network |
+| `network` | Makes a network request during install |
+| `subprocess` | Runs a shell command during install |
+| `encoded-payload` | Decodes a hidden blob, or carries a large encoded string |
+| `dynamic-exec` | Executes code it just decoded or downloaded |
+
+### It was measured before it was allowed to block
+
+The last signal adopted on intuition — score packages by age — flagged 100% of
+legitimate same-day publications. So this one was measured first:
+
+| Group | Flagged |
+|---|---|
+| 27 established legitimate packages | **0%** |
+| 32 packages published to PyPI that day | **0%** |
+| 6 known malicious install-script shapes | **6 of 6** |
+
+That is why a **young** package with install-time signals is **blocked**, while
+age alone can only ever warn. An established package showing the same signals is
+warned about rather than blocked: old packages do sometimes build things at
+install time, and the sample behind that judgement is small.
+
+**Limits, stated plainly:** a squat that waits until import time rather than
+install time will not be caught, obfuscation beyond the listed patterns will not
+be caught, and packages published without an sdist cannot be inspected at all.
+
+---
+
 ## Comparison
 
 | | `ghostpkg` | SCA scanners (Snyk, Socket) | `pip install` alone |
 |---|:---:|:---:|:---:|
 | Catches a name that doesn't exist | ✅ **before install** | after install / in a PR | ❌ |
+| Inspects install scripts without running them | ✅ `--deep` | varies | ❌ |
 | Runs without an account | ✅ | ❌ | — |
 | Runtime dependencies | **0** | many | — |
 | Blocks legitimate new packages | ❌ **no** | varies | — |
@@ -321,10 +373,11 @@ earns its keep. Use both.
 ## Honest limitations
 
 > [!WARNING]
-> **The hard case is out of scope today.** A hallucinated name that an attacker has
-> **already registered** will pass the existence check. The warning signals are all
-> that stand between you and it, and they are advisory. Improving this is the main
-> open problem — see [issues](https://github.com/M1rwana12/ghostpkg/issues).
+> **The hard case is partly addressed by `--deep`, not solved.** A hallucinated
+> name an attacker has **already registered** passes the existence check.
+> `--deep` looks at install-time behaviour and catches the usual shapes, but an
+> attacker who does nothing during install will still get through. Discussion in
+> [#1](https://github.com/M1rwana12/ghostpkg/issues/1).
 
 - Typo detection compares against the 2,000 most-downloaded projects in each
   ecosystem, so a squat on a less popular package won't be flagged as a lookalike.

@@ -134,7 +134,26 @@ def nearest_popular(name: str, ecosystem: str = "pypi") -> tuple[str, int] | Non
     return best
 
 
-def assess(facts: PackageFacts, strict: bool = False) -> Finding:
+def assess(
+    facts: PackageFacts,
+    strict: bool = False,
+    signals: "list | None" = None,
+) -> Finding:
+    """Turn registry facts, and optionally --deep install-script signals, into
+    a verdict.
+
+    Install-time signals are treated differently from every other soft signal,
+    and the difference is measured rather than assumed. Age flags 100% of
+    legitimate same-day publications, so it can only ever warn. Install-time
+    behaviour flagged 0 of 27 established and 0 of 32 brand-new real packages
+    while catching all six known malicious shapes, so a *young* package that
+    reaches for the network, a subprocess or a decoded payload during install
+    is specific enough to block.
+
+    An established package doing the same is only warned about: legitimate
+    old packages do sometimes build things at install time, and the sample
+    behind that judgement is small.
+    """
     if not facts.exists:
         return Finding(
             name=facts.name,
@@ -169,7 +188,12 @@ def assess(facts: PackageFacts, strict: bool = False) -> Finding:
     if is_young and not facts.has_repo_url:
         reasons.append("no repository or homepage link")
 
-    if not reasons:
+    install_reasons = [str(signal) for signal in (signals or [])]
+    reasons.extend(install_reasons)
+
+    if install_reasons and is_young:
+        verdict = Verdict.BLOCK
+    elif not reasons:
         verdict = Verdict.OK
     elif strict:
         verdict = Verdict.BLOCK

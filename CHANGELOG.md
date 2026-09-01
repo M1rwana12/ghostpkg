@@ -6,6 +6,46 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-01
+
+### Added
+- **`--deep`: static inspection of install-time code.** This addresses the
+  project's main open problem ([#1]) — a hallucinated name an attacker has
+  *already registered*. Such a package exists, so the existence check passes,
+  and it is young with one release and no repository link, exactly like every
+  honest new package. Age cannot separate them; install-time behaviour can,
+  because a slopsquat has to run something when it is installed.
+- Signals reported: reading environment variables together with a network call,
+  a network request, a shell command, decoding a hidden blob, and executing code
+  that was just decoded or downloaded.
+
+### How the policy was decided
+The previous signal adopted on intuition — scoring packages by age — flagged
+100% of legitimate same-day publications. So this one was measured first:
+
+| Group | Flagged |
+|---|---|
+| 27 established legitimate packages | 0% |
+| 32 packages published to PyPI that day | 0% |
+| 6 known malicious install-script shapes | 6 of 6 |
+
+That is why a **young** package with install-time signals is **blocked** while
+age alone still only warns. An established package with the same signals is
+warned about, not blocked.
+
+The first pattern set was far looser and flagged 37% of established packages,
+mostly for reading environment variables — ordinary when inspecting build
+flags. It also scanned `conftest.py`, which runs during testing and never on
+install. Both were mistakes found by measuring rather than by reasoning.
+
+### Safety
+Archives are read in memory and never extracted to disk; nothing is executed,
+imported or compiled; downloads stop at 8 MB and members at 512 KB so a
+decompression bomb cannot exhaust memory; any failure to fetch or parse means
+"not inspected" rather than a pass.
+
+[#1]: https://github.com/M1rwana12/ghostpkg/issues/1
+
 ## [0.4.0] - 2026-09-01
 
 ### Added
@@ -109,7 +149,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.5.0
 [0.4.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.4.0
 [0.3.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.3.0
 [0.2.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.2.0
