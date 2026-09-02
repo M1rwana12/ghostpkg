@@ -449,7 +449,17 @@ def _toml_arrays(text: str, table: str, key: str) -> list[str]:
     return collected
 
 
-def _toml_table_keys(text: str, table: str) -> list[str]:
+def _toml_table_keys(
+    text: str, table: str, *, skip_stated_sources: bool = False
+) -> list[str]:
+    """Key names in one TOML table, for the 3.9/3.10 path with no tomllib.
+
+    `skip_stated_sources` drops a key whose value is an inline table naming
+    where it comes from -- `{ git = ... }`, `{ path = ... }`. It is off by
+    default because `[tool.uv.sources]` is read *for* exactly those keys, and
+    filtering them there would return nothing. Getting this backwards is what
+    made the fix work on 3.11 and fail on 3.9.
+    """
     keys: list[str] = []
     current = ""
     for raw in text.splitlines():
@@ -459,10 +469,27 @@ def _toml_table_keys(text: str, table: str) -> list[str]:
             continue
         if current != table or "=" not in line:
             continue
-        name = line.split("=", 1)[0].strip().strip('"').strip("'")
-        if name:
-            keys.append(name)
+        name, _, value = line.partition("=")
+        name = name.strip().strip('"').strip("'")
+        if not name:
+            continue
+        if skip_stated_sources and _states_a_source(value.strip()):
+            continue
+        keys.append(name)
     return keys
+
+
+def _states_a_source(value: str) -> bool:
+    """Whether an inline table sends this dependency somewhere other than the
+    index. `{ version = "^3", optional = true }` does not and must be kept."""
+    if not value.startswith("{"):
+        return False
+    body = value.strip("{} ")
+    return any(
+        part.split("=", 1)[0].strip().strip('"').strip("'") in LOCAL_SOURCE_KEYS
+        for part in body.split(",")
+        if "=" in part
+    )
 
 
 #: Keys that make a Poetry or uv dependency resolve from somewhere other than
@@ -561,7 +588,7 @@ def parse_pyproject(text: str, source: str | None = None) -> list[Requirement]:
             ):
                 poetry_tables.append(line[1:-1])
         for table in poetry_tables:
-            for name in _toml_table_keys(text, table):
+            for name in _toml_table_keys(text, table, skip_stated_sources=True):
                 add_name(name)
 
     local = _local_source_names(text, data if tomllib is not None else None)

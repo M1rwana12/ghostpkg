@@ -243,3 +243,60 @@ class TestPyprojectStatedSources:
             "flask = { version = '^3.0', optional = true }\n"
         )
         assert set(names(parse_pyproject(text))) == {"requests", "flask"}
+
+
+class TestTheFallbackParserAgrees:
+    """`parse_pyproject` has two implementations: tomllib on 3.11+, and a
+    hand-written reader on 3.9/3.10, where a TOML library would mean a runtime
+    dependency. The stated-source fix landed in the first and not the second,
+    passed locally, and failed on all three 3.9 jobs in CI.
+
+    Forcing the fallback here means the two paths are compared on every run
+    rather than only on the machines that happen to be old.
+    """
+
+    @pytest.fixture
+    def fallback(self, monkeypatch):
+        import builtins
+
+        real = builtins.__import__
+
+        def without_tomllib(name, *args, **kwargs):
+            if name == "tomllib":
+                raise ImportError("simulated Python 3.9")
+            return real(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", without_tomllib)
+
+    @pytest.mark.parametrize(
+        "text, expected",
+        [
+            (
+                "[project]\nname='a'\ndependencies=['requests','pydantic-docs']\n\n"
+                "[tool.uv.sources]\npydantic-docs = { git = 'https://x/y' }\n",
+                ["requests"],
+            ),
+            (
+                "[project]\nname='a'\ndependencies=['pydantic-core','requests']\n\n"
+                "[tool.uv.sources]\npydantic-core = { workspace = true }\n",
+                ["requests"],
+            ),
+            (
+                "[tool.poetry.dependencies]\npython='^3.9'\nrequests='^2.31'\n"
+                "internal = { git = 'https://x/y' }\n",
+                ["requests"],
+            ),
+            (
+                "[tool.poetry.dependencies]\npython='^3.9'\nrequests='^2.31'\n"
+                "internal = { path = '../x' }\n",
+                ["requests"],
+            ),
+            (
+                "[tool.poetry.dependencies]\npython='^3.9'\nrequests='^2.31'\n"
+                "flask = { version='^3.0', optional=true }\n",
+                ["requests", "flask"],
+            ),
+        ],
+    )
+    def test_both_paths_give_the_same_answer(self, fallback, text, expected):
+        assert names(parse_pyproject(text)) == expected
