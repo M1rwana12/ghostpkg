@@ -28,9 +28,17 @@ inputs:
     required: false
     default: "false"
   version:
-    description: Version of ghostpkg to install. Pin it for reproducible runs.
+    description: >-
+      Version of ghostpkg to install. Pin it for reproducible runs. The action
+      needs 0.18.0 or newer, which is where --format github arrived.
     required: false
-    default: ""
+    default: ">=0.18.0"
+  install:
+    description: >-
+      Install ghostpkg. Set to false when the job has already put it on PATH --
+      because the project pins it itself, or to test a checkout.
+    required: false
+    default: "true"
   python-version:
     description: Python used to run ghostpkg, not the version your project targets.
     required: false
@@ -51,19 +59,25 @@ runs:
   using: composite
   steps:
     - name: Set up Python
+      if: ${{ inputs.install == 'true' }}
       uses: actions/setup-python@v5
       with:
         python-version: ${{ inputs.python-version }}
 
     - name: Install ghostpkg
+      if: ${{ inputs.install == 'true' }}
       shell: bash
       run: |
-        if [ -n "${{ inputs.version }}" ]; then
-          python -m pip install --quiet "ghostpkg==${{ inputs.version }}"
-        else
-          python -m pip install --quiet ghostpkg
-        fi
-        ghostpkg --version
+        spec="${{ inputs.version }}"
+        case "$spec" in
+          "")            python -m pip install --quiet "ghostpkg>=0.18.0" ;;
+          [0-9]*)        python -m pip install --quiet "ghostpkg==$spec" ;;
+          *)             python -m pip install --quiet "ghostpkg$spec" ;;
+        esac
+
+    - name: Report the version in use
+      shell: bash
+      run: ghostpkg --version
 
     - name: Scan
       id: scan

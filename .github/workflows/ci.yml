@@ -32,6 +32,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      # The checkout, not the published release: this job exists to catch a
+      # broken action before it ships, and the released copy cannot contain a
+      # fix that has not been released yet.
+      - run: pip install -e .
       - uses: ./
         with:
-          version: ""
+          install: "false"
