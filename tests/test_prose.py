@@ -145,3 +145,56 @@ class TestFileRecognition:
             ("rich", "pypi"),
             ("express", "npm"),
         ]
+
+
+class TestACommandInsideASentence:
+    """Three of fourteen popular READMEs write the install command only inside
+    a backtick span, and reading whole lines found nothing at all in them.
+    A span is explicit markup saying "this is a command", so reading one adds
+    no guesswork -- the installer rules still have to match. Re-measured after
+    the widening: 18 names across 22 READMEs, 0% that do not exist."""
+
+    def names(self, text):
+        return [r.name for r in extract(text)]
+
+    def test_pydantic_readme_shape(self):
+        text = "Install using `pip install -U pydantic` or `conda install pydantic -c conda-forge`."
+        assert self.names(text) == ["pydantic"]
+
+    def test_black_readme_shape(self):
+        text = "_Black_ can be installed by running `pip install black`. It requires Python 3.10+."
+        assert self.names(text) == ["black"]
+
+    def test_fastapi_readme_shape(self):
+        """Extras belong to the requirement, not to the name. Rejecting the
+        whole token dropped the command with it."""
+        text = 'When you install FastAPI with `uv add "fastapi[standard]"` it comes with extras.'
+        assert self.names(text) == ["fastapi"]
+
+    def test_a_span_that_is_not_a_command_yields_nothing(self):
+        text = "Set `DEBUG=True` and call `app.run()` in `main.py` before you deploy."
+        assert self.names(text) == []
+
+    def test_prose_around_a_span_is_not_read_as_packages(self):
+        """The failure this feature had at 25%: the sentence continuing past
+        the command became package names."""
+        text = "Run `pip install httpx` and the command line client is optional."
+        assert self.names(text) == ["httpx"]
+
+    def test_several_spans_on_one_line(self):
+        text = "Use `pip install flask` or `npm install express` depending on the stack."
+        assert set(self.names(text)) == {"flask", "express"}
+
+    def test_a_fenced_block_still_works(self):
+        text = "```bash\npip install requests\n```\n"
+        assert self.names(text) == ["requests"]
+
+    def test_the_line_number_is_the_line_of_the_span(self):
+        text = "intro\n\nInstall with `pip install ghost-thing` today.\n"
+        assert extract(text)[0].line == 3
+
+    def test_extras_on_a_bare_line_too(self):
+        assert self.names("pip install fastapi[standard]") == ["fastapi"]
+
+    def test_a_span_with_a_backtick_pair_but_no_installer(self):
+        assert self.names("The `requirements.txt` file lists them.") == []

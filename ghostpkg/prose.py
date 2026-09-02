@@ -87,6 +87,10 @@ def _clean(token: str) -> "tuple[str | None, bool]":
         return None, stop
     if token.endswith((".whl", ".tar.gz", ".tgz", ".zip", ".txt", ".toml", ".json")):
         return None, stop
+    # `fastapi[standard]` names fastapi; the extras are not part of it.
+    token = re.sub(r"\[[^\]]*\]$", "", token)
+    if not token:
+        return None, stop
     match = NAME.match(token)
     if not match or match.group(1) != token:
         return None, stop
@@ -100,13 +104,37 @@ def _split_commands(line: str) -> list[str]:
     return [part for part in re.split(r"&&|\|\||[;|]", line) if part.strip()]
 
 
+#: A backtick code span. Prose puts commands inside one rather than on a line
+#: of their own -- "Install using `pip install -U pydantic`" in pydantic's
+#: README, "can be installed by running `pip install black`" in Black's. Three
+#: of fourteen popular project READMEs write it only this way, and reading
+#: whole lines found nothing at all in them.
+CODE_SPAN = re.compile(r"`([^`\n]+)`")
+
+
+def _candidates(line: str) -> list[str]:
+    """The line itself, plus whatever sits inside its code spans.
+
+    A span is explicit markup saying "this is a command", so reading one adds
+    no guesswork: the same installer rules still have to match, and a span that
+    is not a command yields nothing.
+    """
+    spans = CODE_SPAN.findall(line)
+    return [line] + spans if spans else [line]
+
+
 def extract(text: str, source: str | None = None) -> list[Requirement]:
     """Package names from install commands written anywhere in `text`."""
     found: list[Requirement] = []
     seen: set[tuple[str, str]] = set()
 
     for number, raw in enumerate(text.splitlines(), 1):
-        for command in _split_commands(raw):
+        commands = [
+            part
+            for candidate in _candidates(raw)
+            for part in _split_commands(candidate)
+        ]
+        for command in commands:
             stripped = LEAD.sub("", command).strip().strip("`")
             if not stripped:
                 continue

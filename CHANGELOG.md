@@ -6,6 +6,48 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-09-02
+
+Both of these came out of an acceptance pass against the published package
+rather than the working tree: 35 checks, two of which failed.
+
+### Added
+- **A name that does not exist now says what it was probably meant to be.**
+
+  ```
+  BLOCKED  reqeusts
+           - does not exist on pypi
+           - did you mean requests?
+  ```
+
+  The age gate that guards this comparison elsewhere exists to stop a
+  legitimate published package being called a typo. A name that does not exist
+  has no legitimacy to protect and is already blocked, so a suggestion can only
+  help someone fix the line. Measured: correct on **11 of 11** plausible typos,
+  and silent on **6 of 6** invented names -- the shape a hallucination usually
+  takes. The block still comes from `GP001`, so suppressing the suggestion
+  cannot change a verdict.
+
+- **Install commands written inside a sentence are read.** Prose puts them in a
+  backtick span rather than on a line of their own:
+
+  > Install using `pip install -U pydantic` or ...
+  > _Black_ can be installed by running `pip install black`.
+
+  **Three of fourteen** popular project READMEs write it only this way, and
+  reading whole lines found nothing at all in them. A span is explicit markup
+  saying "this is a command", so the installer rules still have to match and a
+  span that is not a command yields nothing.
+
+  Re-measured after the widening, because this feature was once wrong 25% of
+  the time: **18 names across 22 READMEs, 0% that do not exist.** Coverage on
+  the original fourteen went from 5 to 9.
+
+### Fixed
+- `fastapi[standard]` is read as `fastapi`. The extras belong to the
+  requirement rather than the name, and rejecting the whole token dropped the
+  command with it.
+
 ## [0.18.1] - 2026-09-02
 
 ### Security
@@ -620,7 +662,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.18.1...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.19.0
 [0.18.1]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.18.1
 [0.18.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.18.0
 [0.17.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.17.0

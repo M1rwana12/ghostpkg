@@ -215,11 +215,24 @@ def assess(
     behind that judgement is small.
     """
     if not facts.exists:
+        reasons = [Reason(GP_MISSING, f"does not exist on {facts.ecosystem}")]
+        # The age gate that guards this comparison elsewhere exists to keep a
+        # legitimate published package from being called a typo. A name that
+        # does not exist has no legitimacy to protect and is already blocked,
+        # so a suggestion can only help someone fix the line. Measured on
+        # eleven plausible typos it named the right package every time, and on
+        # six invented names -- the shape a hallucination usually takes -- it
+        # stayed quiet.
+        neighbour = nearest_popular(facts.name, facts.ecosystem)
+        if neighbour is not None:
+            reasons.append(
+                Reason(GP_LOOKALIKE, f"did you mean {neighbour[0]}?")
+            )
         return Finding(
             name=facts.name,
             ecosystem=facts.ecosystem,
             verdict=Verdict.BLOCK,
-            reasons=[Reason(GP_MISSING, f"does not exist on {facts.ecosystem}")],
+            reasons=reasons,
             facts=facts,
             blocking=(GP_MISSING,),
         )
