@@ -42,3 +42,6 @@ jobs:
       - uses: ./
         with:
           install: "false"
+          # Both READMEs use `pip install foo-bar` to explain what a
+          # hallucinated name looks like, and ghostpkg is right to flag it.
+          config: .github/ghostpkg-ignore.json

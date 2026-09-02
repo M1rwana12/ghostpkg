@@ -43,6 +43,14 @@ inputs:
     description: Python used to run ghostpkg, not the version your project targets.
     required: false
     default: "3.12"
+  config:
+    description: >-
+      Path to an ignore file, for findings already decided about. ghostpkg
+      never picks one up from the tree it is scanning -- an agent with shell
+      access could otherwise write its own permission slip -- so it has to be
+      named here.
+    required: false
+    default: ""
   fail-on-error:
     description: >-
       Fail the job when a name could not be checked at all -- a registry
@@ -92,11 +100,13 @@ runs:
         PATHS: ${{ inputs.paths }}
         STRICT: ${{ inputs.strict }}
         DEEP: ${{ inputs.deep }}
+        CONFIG: ${{ inputs.config }}
         FAIL_ON_ERROR: ${{ inputs.fail-on-error }}
       run: |
         args=()
         [ "$STRICT" = "true" ] && args+=(--strict)
         [ "$DEEP" = "true" ] && args+=(--deep)
+        [ -n "$CONFIG" ] && args+=(--config "$CONFIG")
 
         # Split on whitespace, including newlines, so both `paths: a b` and a
         # multi-line list work. A path containing a space has to be passed on

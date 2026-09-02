@@ -1,0 +1,16 @@
+{
+  "_comment": [
+    "ghostpkg scanning its own repository. This file is passed explicitly with",
+    "--config, because ghostpkg never reads an ignore file from the tree it is",
+    "scanning -- an agent with shell access could otherwise write its own",
+    "permission slip. That rule is why this sits under .github and is named in",
+    "the workflow rather than being found automatically."
+  ],
+  "ignore": [
+    {
+      "package": "foo-bar",
+      "rule": "GP001",
+      "reason": "Documentation. Both READMEs use `pip install foo-bar` as the example of a hallucinated name, so ghostpkg is right to flag it -- it is an install command for a package that does not exist. Suppressed rather than reworded because the example is the clearest way to explain what the tool does."
+    }
+  ]
+}
