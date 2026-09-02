@@ -6,6 +6,41 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-09-02
+
+### Added
+- **`ghostpkg scan` accepts a directory, and defaults to the current one.**
+  `ghostpkg scan .` previously answered "that is a directory, pass a manifest
+  file" and exited 2, so using the tool on a project meant knowing and naming
+  every dependency file by hand -- dozens of them in a monorepo.
+
+  Two rules keep the result small enough to read:
+
+  - **Vendored and generated trees are skipped**: `node_modules`, `.venv`,
+    `.git`, `dist`, `build`, `vendor`, `__pycache__` and the rest.
+    `node_modules` alone holds a `package.json` for every installed package, so
+    walking into it would turn one scan into thousands of lookups of things
+    already on disk.
+  - **A lockfile supersedes the manifest beside it.** A lockfile is that
+    manifest resolved, so it names everything the manifest does plus the
+    transitive dependencies; reading both prints most packages twice and checks
+    nothing extra. This applies within one directory only, so a workspace
+    member's own `package.json` is still read.
+
+  Agent instruction files (`AGENTS.md`, `CLAUDE.md`, `.cursorrules`) are picked
+  up wherever they appear, and the README at the root of the search -- but not
+  Markdown in general, which in a large repository is mostly changelogs and
+  documentation.
+
+  Measured on a fresh clone of `pallets/flask`: six files found in 2.6 seconds,
+  with the root `pyproject.toml` correctly superseded by `uv.lock`.
+
+### Changed
+- A file **named on the command line** that cannot be parsed is still an error.
+  A file found by searching a directory is skipped instead: refusing to scan a
+  whole project because one unrelated file in it is malformed would make the
+  directory form unusable. An empty result still exits 3, never 0.
+
 ## [0.16.0] - 2026-09-02
 
 ### Added
@@ -532,7 +567,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.17.0
 [0.16.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.16.0
 [0.15.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.15.0
 [0.14.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.14.0

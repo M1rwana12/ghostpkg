@@ -14,6 +14,7 @@ from pathlib import Path
 from . import __version__, registries
 from .assess import Finding
 from .cache import Cache
+from .discover import discover
 from .manifests import UnsupportedManifest, load_manifest, parse_requirements
 from .policy import PolicyError, apply as apply_policy, load as load_policy
 from .report import Palette, as_json, render, summarise, use_colour
@@ -46,8 +47,10 @@ def build_parser() -> argparse.ArgumentParser:
     scan.add_argument(
         "paths",
         type=Path,
-        nargs="+",
-        help="one or more manifests or lockfiles; mixed ecosystems are fine",
+        nargs="*",
+        default=[Path(".")],
+        help="manifests, lockfiles, or a directory to search "
+        "(default: the current one); mixed ecosystems are fine",
     )
 
     for command in (check, scan):
@@ -110,24 +113,34 @@ def main(argv: list[str] | None = None) -> int:
     by_ecosystem: "dict[str, list]" = {}
 
     if args.command == "scan":
-        for path in args.paths:
+        paths: list[Path] = []
+        for path in args.paths or [Path(".")]:
             if not path.exists():
                 print(f"ghostpkg: no such file: {path}", file=sys.stderr)
                 return EXIT_ERROR
-            if path.is_dir():
-                print(
-                    f"ghostpkg: {path} is a directory; pass a manifest file",
-                    file=sys.stderr,
-                )
-                return EXIT_ERROR
+            paths.extend(discover(path) if path.is_dir() else [path])
+
+        if not paths:
+            where = ", ".join(str(p) for p in args.paths)
+            print(f"ghostpkg: no manifests found in {where}", file=sys.stderr)
+            return EXIT_NOTHING_SCANNED
+
+        for path in paths:
             try:
                 found, ecosystem = load_manifest(path)
             except UnsupportedManifest as exc:
-                print(f"ghostpkg: {exc}", file=sys.stderr)
-                return EXIT_ERROR
+                if path in args.paths:
+                    print(f"ghostpkg: {exc}", file=sys.stderr)
+                    return EXIT_ERROR
+                continue
             except (json.JSONDecodeError, UnicodeDecodeError, ValueError, OSError) as exc:
+                # A named file that will not parse is an error. A discovered one
+                # is not: refusing to scan a project because some unrelated file
+                # in it is malformed would make the directory form unusable.
                 print(f"ghostpkg: could not parse {path}: {exc}", file=sys.stderr)
-                return EXIT_ERROR
+                if path in args.paths:
+                    return EXIT_ERROR
+                continue
             for requirement in found:
                 by_ecosystem.setdefault(
                     requirement.ecosystem or ecosystem, []

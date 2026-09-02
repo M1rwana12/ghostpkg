@@ -149,6 +149,20 @@ Several files can be scanned in one run, and they may be different ecosystems:
 ghostpkg scan requirements.txt package.json pnpm-lock.yaml
 ```
 
+Or point it at a directory -- or at nothing, which means the current one:
+
+```bash
+ghostpkg scan          # searches the current directory
+ghostpkg scan ../other-project
+```
+
+The search skips `node_modules`, `.venv`, `.git`, `dist` and other vendored or
+generated trees, and **a lockfile supersedes the manifest beside it**: a
+lockfile is that manifest resolved, so reading both prints most packages twice
+and checks nothing extra. Alongside manifests it picks up agent instruction
+files -- `AGENTS.md`, `CLAUDE.md`, `.cursorrules` -- and the README at the root,
+since that is where an install command is most likely to be copied from.
+
 Anything else is **refused with an error rather than guessed at**. Guessing is
 what made an earlier version read `pyproject.toml` with the requirements parser
 and report TOML keys as package names.

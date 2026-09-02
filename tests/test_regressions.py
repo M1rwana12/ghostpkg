@@ -247,8 +247,11 @@ class TestDeepReadsOnlyTheTopLevelInstallScript:
 
 
 class TestScanArgumentHandling:
-    def test_directory_is_refused_not_crashed(self, tmp_path):
-        assert main(["scan", str(tmp_path)]) == 2
+    def test_a_directory_is_searched_not_refused(self, tmp_path):
+        """It used to crash, then it was made to refuse with exit 2. Since
+        0.17.0 a directory is searched for manifests -- an empty one still is
+        not a pass, so it exits 3 rather than 0."""
+        assert main(["scan", str(tmp_path)]) == 3
 
     def test_missing_file_is_refused(self, tmp_path):
         assert main(["scan", str(tmp_path / "nope.txt")]) == 2
