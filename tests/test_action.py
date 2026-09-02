@@ -11,6 +11,8 @@ injection, and it shipped in 0.18.0.
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -40,6 +42,25 @@ def hook():
     return yaml.safe_load(read(HOOKS))[0]
 
 
+def working_bash():
+    """A bash that actually runs, or None.
+
+    On a Windows runner `bash` resolves to the WSL stub, which prints a notice
+    about installing a distribution and exits 1. Finding the name on PATH is
+    not enough, so the shell is asked to do something first.
+    """
+    found = shutil.which("bash")
+    if not found:
+        return None
+    try:
+        result = subprocess.run(
+            [found, "-c", "echo ok"], capture_output=True, text=True, timeout=30
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return found if result.stdout.strip() == "ok" else None
+
+
 class TestNoTemplateInjection:
     def test_no_interpolation_inside_any_run_block(self):
         """Every input must arrive through `env:` instead, where it is data the
@@ -61,9 +82,10 @@ class TestNoTemplateInjection:
     )
     def test_each_input_reaches_the_shell_through_env(self, name, variable):
         environments = [step.get("env") or {} for step in steps()]
-        assert any(
-            env.get(variable) == "${{ inputs.%s }}" % name for env in environments
-        ), f"{name} is not passed as {variable}"
+        expected = "${{ inputs.%s }}" % name
+        assert any(env.get(variable) == expected for env in environments), (
+            f"{name} is not passed as {variable}"
+        )
 
     @pytest.mark.parametrize(
         "variable", ["PATHS", "STRICT", "DEEP", "SPEC", "FAIL_ON_ERROR"]
@@ -80,28 +102,39 @@ class TestNoTemplateInjection:
                     # of this assertion called that a failure.
                     assert line[: match.start()].count('"') % 2 == 1, line.strip()
 
-    def test_a_hostile_paths_input_stays_an_argument(self):
-        """The payload should end up as ordinary words handed to ghostpkg, not
-        as a command. Run against the real splitting logic from the step."""
-        bash = pytest.importorskip("subprocess")
+    def test_a_hostile_paths_input_stays_an_argument(self, tmp_path):
+        """The payload should become ordinary words handed to ghostpkg, not a
+        command. Run against the splitting logic lifted from the step itself,
+        so the test cannot drift away from what ships.
+
+        The action declares `shell: bash`, so bash is the only interpreter this
+        has to hold for.
+        """
+        bash = working_bash()
+        if bash is None:
+            pytest.skip("no working bash on this runner")
+
         step = next(s for s in steps() if s.get("id") == "scan")
-        splitting = "\n".join(
-            line
-            for line in step["run"].splitlines()
-            if not line.strip().startswith(("ghostpkg", "code=", "set ", "echo "))
-            and "GITHUB_OUTPUT" not in line
+        splitting = step["run"].split("set +e")[0]
+        marker = tmp_path / "pwned"
+        script = "\n".join([
+            "PATHS=$1; STRICT=false; DEEP=false",
+            splitting,
+            'printf "%s" "${#paths[@]}"',
+        ])
+        payload = 'requirements.txt"; touch ' + marker.as_posix() + '; echo "'
+
+        result = subprocess.run(
+            [bash, "-c", script, "_", payload],
+            capture_output=True,
+            text=True,
+            timeout=60,
         )
-        script = (
-            'PATHS=$1; STRICT=false; DEEP=false\n'
-            + splitting.split("case \"$code\"")[0]
-            + '\nprintf "%s\\n" "${#paths[@]}"\n'
-        )
-        payload = 'requirements.txt"; touch /tmp/ghostpkg-pwned; echo "'
-        result = bash.run(
-            ["bash", "-c", script, "_", payload], capture_output=True, text=True
-        )
+
         assert result.returncode == 0, result.stderr
-        assert not Path("/tmp/ghostpkg-pwned").exists()
+        assert not marker.exists(), "the payload executed"
+        # Split into words rather than run: several arguments, none a command.
+        assert int(result.stdout.strip()) > 1
 
 
 class TestTheActionIsWellFormed:
