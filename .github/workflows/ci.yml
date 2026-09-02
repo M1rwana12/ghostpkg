@@ -24,3 +24,14 @@ jobs:
         run: |
           ghostpkg --version
           ghostpkg check requests
+
+  # The action is a distributed artefact like any other, so it is exercised on
+  # every push rather than only when someone reports it broken. It runs against
+  # this repository's own manifests.
+  action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./
+        with:
+          version: ""
