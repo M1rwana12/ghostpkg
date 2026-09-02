@@ -27,10 +27,12 @@ Language models invent library names. Attackers register those names in advance.
 - [What ghostpkg does](#what-ghostpkg-does)
 - [Install](#install)
 - [Usage](#usage)
+- [Monorepos and private packages](#monorepos-and-private-packages)
 - [Every signal it checks](#every-signal-it-checks)
 - [Why it doesn't block on "suspicious"](#why-it-doesnt-block-on-suspicious)
 - [Where it fits in your workflow](#where-it-fits-in-your-workflow)
 - [How it works internally](#how-it-works-internally)
+- [Measured, and not built](#measured-and-not-built)
 - [Comparison](#comparison)
 - [Honest limitations](#honest-limitations)
 - [Prior art and credit](#prior-art-and-credit)
@@ -119,13 +121,13 @@ ghostpkg scan package.json
 | Manifest | What is read |
 |---|---|
 | `requirements*.txt` | Every requirement line. Comments, flags, VCS URLs and direct links are skipped. |
-| `pyproject.toml` | PEP 621 `project.dependencies` and `project.optional-dependencies`, plus Poetry's `tool.poetry` groups. `[build-system] requires` is not included, and the `python` constraint is not treated as a package. |
+| `pyproject.toml` | PEP 621 `project.dependencies` and `project.optional-dependencies`, PEP 735 `dependency-groups`, and Poetry's `tool.poetry` groups. `[build-system] requires` is not included, the `python` constraint is not treated as a package, and anything redirected by `[tool.uv.sources]` is left alone. |
 | `package.json` | `dependencies`, `devDependencies`, `optionalDependencies`, `peerDependencies`. |
 | `package-lock.json` | Every locked package, both the v1 nested and v2/v3 `packages` layouts. Workspace members and anything resolved from git, a path or a private registry are skipped. |
 | `yarn.lock` | Every locked package, classic (v1) and berry (v2+). Aliases are checked under the name that actually gets installed. |
 | `pnpm-lock.yaml` | Every locked package, lockfile versions 5, 6 and 9. |
-| `poetry.lock`, `uv.lock` | Every locked package. |
-| `README`, `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `*.md` | Package names out of install commands written in prose. |
+| `poetry.lock`, `uv.lock` | Every locked package. Poetry's `[package.source]` and uv's `source = { git = ... }` mean the entry came from somewhere other than the index, so it is skipped. |
+| `README`, `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `*.md` | Package names out of install commands written in prose — including commands written inside a sentence, in a backtick span. |
 
 **Why prose matters:** the hallucination arrives before the manifest does. A
 model writes `pip install foo-bar` into a README or an agent instruction file,
@@ -166,6 +168,36 @@ since that is where an install command is most likely to be copied from.
 Anything else is **refused with an error rather than guessed at**. Guessing is
 what made an earlier version read `pyproject.toml` with the requirements parser
 and report TOML keys as package names.
+
+### Monorepos and private packages
+
+A dependency that **states where it comes from** is not the public registry's
+business, and `ghostpkg` does not look it up. Without that rule a monorepo is a
+wall of false blocks — measured on one real `package.json`, **six entries out of
+nine**.
+
+| Written as | What happens |
+|---|---|
+| `"@acme/ui": "workspace:*"`, `"catalog:default"` | Skipped — resolved inside the repository |
+| `"lib": "file:../lib"`, `"link:"`, `"portal:"`, `"../sibling"` | Skipped — a directory on disk |
+| `"forked": "git+https://..."`, `"owner/repo"`, `"github:owner/repo"` | Skipped — a git host |
+| `"dep": "https://.../x.tgz"` | Skipped — a URL |
+| `"ui": "npm:@scope/real@^2"` | Checked as **`@scope/real`** — an alias installs a different name than the key |
+| `internal @ git+https://...` in a requirements file | Skipped |
+| `[tool.uv.sources]`, Poetry `{ git = ... }` / `{ path = ... }` / `{ workspace = true }` | Skipped |
+| `[package.source]` in `poetry.lock`, `source = { git = ... }` in `uv.lock` | Skipped |
+| A `package-lock.json` entry that is a workspace member, or resolved from git | Skipped |
+
+The same rule covers a **private registry**. Artifactory, Nexus and Verdaccio
+proxy public names *and* host private ones under the same host, and a lockfile
+does not say which is which — so those entries are left alone rather than
+guessed at. Known public mirrors (`registry.yarnpkg.com`,
+`registry.npmmirror.com`) serve the public namespace, so they are still checked.
+
+> This was found by pointing `ghostpkg` at `pydantic`'s own `pyproject.toml`,
+> which it blocked. `pydantic-docs` is declared in a dependency group and
+> redirected to a git repository by `[tool.uv.sources]`; it is not on PyPI, and
+> reporting that as a missing dependency was simply wrong.
 
 ### Options
 
@@ -280,6 +312,7 @@ $ ghostpkg check somepkgthatisnotreal9911 --json
 | Signal | Verdict | Why |
 |---|---|---|
 | Not in the registry | 🔴 **Blocked** | The name is a ghost. There is nothing to install, and this is exactly what a hallucination looks like. |
+| ...and it is one or two edits from a popular name | 🔴 Blocked, **with a suggestion** | `did you mean requests?` The age gate that guards this comparison elsewhere exists to stop a legitimate published package being called a typo — a name that does not exist has none of that to protect and is already blocked, so naming the likely intent can only help. Correct on 11 of 11 plausible typos; silent on 6 of 6 invented names. |
 | The registry confiscated this name over malware | 🔴 **Blocked** | npm replaces such a name with a placeholder it owns rather than deleting it, so the name still resolves — which is why this used to come back "ok". `crossenv` and `ffmepg` are real examples. |
 | A pinned version the maintainer withdrew | 🟡 Warning | Reported with the reason they gave. It warns rather than blocks because pip installs a yanked version when it is pinned explicitly. PyPI only: npm's `deprecated` covers 5.78% of versions and 160 of `glob`'s 168, so it is noise. |
 | A pinned version that does not exist | 🔴 **Blocked** | `requests==99.99.99`. A model invents versions as readily as names, and the registry lists every real one, so this is a lookup rather than a heuristic. Only exact pins are checked — a range like `>=2.31` or `^4.18.0` may be satisfied by some other version. |
@@ -318,6 +351,17 @@ $ ghostpkg check react-router-dom-utils -e npm
            - first published 176 days ago
            - only one release
            - no repository or homepage link
+```
+
+When the name does not exist at all, the block comes with the likely intent
+attached, and — in a scan — the file and line it was written on:
+
+```console
+$ ghostpkg scan requirements.txt
+
+  BLOCKED  reqeusts  (requirements.txt:12)
+           - does not exist on pypi
+           - did you mean requests?
 ```
 
 There is a second lesson baked into the code. A naive typosquat check using a flat
@@ -467,6 +511,31 @@ install time, and the sample behind that judgement is small.
 **Limits, stated plainly:** a squat that waits until import time rather than
 install time will not be caught, obfuscation beyond the listed patterns will not
 be caught, and packages published without an sdist cannot be inspected at all.
+
+---
+
+## Measured, and not built
+
+Each of these was proposed, prototyped, measured, and dropped. They are listed
+because what a security tool **refuses** to do says more about its judgement
+than its feature list does — every one of them would have looked reasonable in a
+changelog.
+
+| Idea | What the measurement showed | |
+|---|---|---|
+| Score packages by age and release count, block the suspicious ones | **100%** of legitimate same-day PyPI publications flagged | Rejected |
+| Treat reading `os.environ` in an install script as a signal | **37%** of established packages do it | Rejected |
+| Drop the age gate on typo detection | **2.54%** false positives; only the pair of conditions reaches 0% | Rejected |
+| Cache "does not exist" for an hour | A **real false block** of a live package: PyPI's feed announces a name before the JSON API serves it | Negatives are never cached |
+| PEP 740 attestations as a *suppressor* of warnings | Of 38 packages, 13 had an attestation and 8 lacked a repository link — **2 were in both groups** | 5% benefit for two extra requests. Rejected |
+| npm's `deprecated` as an equivalent of PyPI's `yanked` | **5.78%** of all versions, and 160 of `glob`'s 168 | Noise. Rejected |
+| Ship a corpus of known hallucinated names | — | A ready-made target list for attackers. Rejected on principle |
+
+The attestation one is worth a sentence, because it was the most attractive
+idea of the set: it would have *removed* warnings rather than adding signals.
+It failed on the logic, not the numbers — an attestation proves **provenance,
+not benevolence**. An attacker can publish a slopsquat through Trusted
+Publishing from their own repository just as easily.
 
 ---
 

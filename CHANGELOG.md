@@ -6,6 +6,37 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-09-02
+
+### Documentation
+Both READMEs had fallen behind the tool. The PyPI page is the English one, so
+this is what people read before installing anything.
+
+- **New section: monorepos and private packages.** The rule that a dependency
+  naming its own source is not the registry's business arrived in 0.15.0 and was
+  never written down -- so a monorepo user had no way to know it works. A table
+  now names every form: `workspace:`, `catalog:`, `file:`, `link:`, `portal:`,
+  git and URL specifiers, `npm:` aliases, `[tool.uv.sources]`, Poetry
+  `{ git = ... }`, `[package.source]`, and workspace members in a lockfile.
+  Private registries are covered too, with the reason they are left alone.
+- **New section: measured, and not built.** Seven ideas that were prototyped,
+  measured and dropped, each with its number: the 100% false-positive scoring
+  design, `os.environ` at 37%, the age gate at 2.54%, cached negatives, PEP 740
+  attestations at a 5% overlap, npm `deprecated` at 5.78%, and the hallucinated-name
+  corpus rejected on principle. What a security tool refuses to do says more
+  about its judgement than its feature list.
+- The signals table documents the `did you mean ...?` suggestion, and the
+  examples show the file and line a finding came from.
+- The manifest table now states what `pyproject.toml` skips via
+  `[tool.uv.sources]`, what `poetry.lock` and `uv.lock` skip via their source
+  fields, and that prose extraction reads commands written inside a sentence.
+- Prose numbers updated to the current measurement: 18 names across 22 READMEs,
+  0% that do not exist.
+
+Rendering was checked with `readme_renderer`, the library PyPI itself uses:
+41,576 characters, 11 tables, no relative links and no images that resolve only
+on GitHub.
+
 ## [0.19.0] - 2026-09-02
 
 Both of these came out of an acceptance pass against the published package
@@ -662,7 +693,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.19.1...HEAD
+[0.19.1]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.19.1
 [0.19.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.19.0
 [0.18.1]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.18.1
 [0.18.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.18.0
