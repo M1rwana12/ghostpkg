@@ -268,3 +268,39 @@ class TestASuggestionOnANameThatDoesNotExist:
         finding = self.missing("reqeusts")
         suggestion = [r for r in finding.reasons if "did you mean" in r][0]
         assert suggestion.rule == GP_LOOKALIKE
+
+
+class TestSeparatorSpellingIsNotATypo:
+    """PyPI treats `-`, `_` and `.` as one separator and ignores case, so
+    `typing_extensions` and `typing-extensions` are the same project. The
+    popular-name list stores the normalised spelling, and comparing the raw one
+    against it missed the match -- the package then came back as a one-edit typo
+    of itself.
+
+    It is unreachable in the product: PyPI resolves both spellings, so such a
+    name always exists, and the lookalike check runs only on packages that are
+    young or abandoned while the suggestion path runs only on names that do not
+    exist. It is fixed anyway because `nearest_popular` is public, and because
+    working out why it was harmless took longer than the fix.
+    """
+
+    @pytest.mark.parametrize(
+        "name",
+        ["typing_extensions", "pre_commit", "readme_renderer", "et_xmlfile",
+         "zope.interface", "jaraco.classes", "TYPING-EXTENSIONS"],
+    )
+    def test_a_different_spelling_of_a_popular_name_is_silent(self, name):
+        assert nearest_popular(name, "pypi") is None
+
+    @pytest.mark.parametrize(
+        "typo, meant",
+        [("reqeusts", "requests"), ("djagno", "django"), ("numpyy", "numpy")],
+    )
+    def test_real_typos_are_still_found(self, typo, meant):
+        assert nearest_popular(typo, "pypi")[0] == meant
+
+    def test_npm_names_are_not_folded(self):
+        """`JSONStream` and `jsonstream` are two different real packages there,
+        so npm keeps case and separators as written."""
+        assert nearest_popular("JSONStream", "npm") is None
+        assert nearest_popular("jsonstream", "npm") is None

@@ -133,7 +133,7 @@ def load(explicit: str | Path | None = None) -> tuple[list[Rule], Path | None]:
     if path is None:
         return [], None
     try:
-        text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8-sig")
     except OSError as exc:
         raise PolicyError(f"could not read {path}: {exc}") from None
     return parse(text, str(path)), path

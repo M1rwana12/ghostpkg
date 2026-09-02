@@ -103,6 +103,21 @@ class UnsupportedManifest(ValueError):
     """The file is not a manifest ghostpkg knows how to read."""
 
 
+#: U+FEFF, written at the start of a file by Notepad, PowerShell's Out-File
+#: and any editor set to "UTF-8 with BOM". Decoding as utf-8-sig removes it and
+#: behaves exactly like utf-8 when it is absent. Without this, seven of the
+#: eight supported formats broke on such a file and four of them did so in
+#: silence -- returning zero packages, or dropping only the first line while
+#: reporting that everything looked fine.
+def read_source(path: "Path") -> str:
+    return path.read_text(encoding="utf-8-sig")
+
+
+def strip_bom(text: str) -> str:
+    """For text handed in directly rather than read from disk."""
+    return text[1:] if text.startswith("\ufeff") else text
+
+
 def _is_url(text: str) -> bool:
     return "://" in text
 
@@ -165,7 +180,7 @@ def parse_requirements(
     seen = _seen if _seen is not None else set()
     found: list[Requirement] = []
 
-    for number, raw in enumerate(text.splitlines(), 1):
+    for number, raw in enumerate(strip_bom(text).splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
@@ -236,7 +251,7 @@ def _read_include(
         return []
     seen.add(path)
     try:
-        text = path.read_text(encoding="utf-8")
+        text = read_source(path)
     except (OSError, UnicodeDecodeError):
         return []
     return parse_requirements(
@@ -245,7 +260,7 @@ def _read_include(
 
 
 def parse_package_json(text: str, source: str | None = None) -> list[Requirement]:
-    data = json.loads(text)
+    data = json.loads(strip_bom(text))
     if not isinstance(data, dict):
         raise ValueError("package.json does not contain an object")
     found: list[Requirement] = []
@@ -255,8 +270,10 @@ def parse_package_json(text: str, source: str | None = None) -> list[Requirement
         if not isinstance(section, dict):
             continue
         for name, spec in section.items():
-            name = str(name)
-            if name in seen:
+            name = str(name).strip()
+            # An empty key is not a package. Left in, the npm client requested
+            # the registry root and read whatever came back as facts about it.
+            if not name or name in seen:
                 continue
             seen.add(name)
             specifier = str(spec) if spec else None
@@ -283,7 +300,7 @@ def parse_package_lock(text: str, source: str | None = None) -> list[Requirement
     `node_modules/a/node_modules/b`); v1 nests `dependencies`. The root entry
     has an empty key and is the project itself, not a dependency.
     """
-    data = json.loads(text)
+    data = json.loads(strip_bom(text))
     if not isinstance(data, dict):
         raise ValueError("package-lock.json does not contain an object")
 
@@ -291,6 +308,7 @@ def parse_package_lock(text: str, source: str | None = None) -> list[Requirement
     seen: set[tuple[str, str | None]] = set()
 
     def add(name: str, version: str | None) -> None:
+        name = name.strip()
         key = (name, version)
         if not name or key in seen:
             return
@@ -360,6 +378,7 @@ def parse_toml_lock(text: str, source: str | None = None) -> list[Requirement]:
     name: str | None = None
     version: str | None = None
     stated_source = False
+    text = strip_bom(text)
 
     def flush() -> None:
         nonlocal name, version, stated_source
@@ -553,6 +572,7 @@ def parse_pyproject(text: str, source: str | None = None) -> list[Requirement]:
     except ImportError:
         tomllib = None  # type: ignore[assignment]
 
+    text = strip_bom(text)
     found: list[Requirement] = []
 
     def add(spec: str) -> None:
@@ -637,26 +657,26 @@ def load_manifest(path: Path) -> tuple[list[Requirement], str]:
     source = str(path)
 
     if looks_like_prose(name):
-        return extract(path.read_text(encoding="utf-8"), source), "pypi"
+        return extract(read_source(path), source), "pypi"
 
     if name == "package.json":
-        return parse_package_json(path.read_text(encoding="utf-8"), source), "npm"
+        return parse_package_json(read_source(path), source), "npm"
     if name == "package-lock.json":
-        return parse_package_lock(path.read_text(encoding="utf-8"), source), "npm"
+        return parse_package_lock(read_source(path), source), "npm"
     if name == "pnpm-lock.yaml":
         from .jslocks import parse_pnpm_lock  # noqa: PLC0415
 
-        return parse_pnpm_lock(path.read_text(encoding="utf-8"), source), "npm"
+        return parse_pnpm_lock(read_source(path), source), "npm"
     if name == "yarn.lock":
         from .jslocks import parse_yarn_lock  # noqa: PLC0415
 
-        return parse_yarn_lock(path.read_text(encoding="utf-8"), source), "npm"
+        return parse_yarn_lock(read_source(path), source), "npm"
     if name in ("poetry.lock", "uv.lock"):
-        return parse_toml_lock(path.read_text(encoding="utf-8"), source), "pypi"
+        return parse_toml_lock(read_source(path), source), "pypi"
     if name == "pyproject.toml":
-        return parse_pyproject(path.read_text(encoding="utf-8"), source), "pypi"
+        return parse_pyproject(read_source(path), source), "pypi"
     if _looks_like_requirements(name):
-        text = path.read_text(encoding="utf-8")
+        text = read_source(path)
         return parse_requirements(text, base=path.parent, source=source), "pypi"
 
     raise UnsupportedManifest(

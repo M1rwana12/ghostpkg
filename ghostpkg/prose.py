@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 
-from .manifests import Requirement
+from .manifests import Requirement, strip_bom
 
 #: Each installer, with the ecosystem it installs into and the sub-command
 #: that means "install these names".
@@ -128,7 +128,7 @@ def extract(text: str, source: str | None = None) -> list[Requirement]:
     found: list[Requirement] = []
     seen: set[tuple[str, str]] = set()
 
-    for number, raw in enumerate(text.splitlines(), 1):
+    for number, raw in enumerate(strip_bom(text).splitlines(), 1):
         commands = [
             part
             for candidate in _candidates(raw)

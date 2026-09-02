@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import re
 
-from .manifests import Requirement, npm_alias_target
+from .manifests import Requirement, npm_alias_target, strip_bom
 
 #: A yarn descriptor protocol that resolves somewhere other than the registry.
 #: `exec:` and `patch:` are berry-only; the rest appear in both versions.
@@ -71,7 +71,7 @@ def parse_yarn_lock(text: str, source: str | None = None) -> list[Requirement]:
     found: list[Requirement] = []
     seen: set[str] = set()
 
-    for raw in text.splitlines():
+    for raw in strip_bom(text).splitlines():
         if not raw or raw[0] in " \t#" or not raw.rstrip().endswith(":"):
             continue
         line = raw.rstrip()[:-1].strip()
@@ -115,7 +115,7 @@ def parse_pnpm_lock(text: str, source: str | None = None) -> list[Requirement]:
     seen: set[str] = set()
     in_packages = False
 
-    for raw in text.splitlines():
+    for raw in strip_bom(text).splitlines():
         stripped = raw.strip()
         if not stripped or stripped.startswith("#"):
             # A blank line does not end the block. Treating one as a

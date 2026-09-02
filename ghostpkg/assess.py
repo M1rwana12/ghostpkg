@@ -40,7 +40,10 @@ NEW_DAYS = 365
 # An exact pin, and only an exact pin. `>=`, `^`, `~` and wildcards describe a
 # range that the registry may satisfy with some other version, so there is
 # nothing definite to check. `==1.2.3` either exists or it does not.
-PYPI_PIN = re.compile(r"^\s*==\s*([A-Za-z0-9][A-Za-z0-9.\-+!]*)\s*$")
+#: `===` is PEP 440 arbitrary equality -- a pin like any other, and the only
+#: way to name a version that is not PEP 440 normalisable. Missing it meant
+#: such a pin was never checked at all.
+PYPI_PIN = re.compile(r"^\s*={2,3}\s*([A-Za-z0-9][A-Za-z0-9.\-+!]*)\s*$")
 NPM_PIN = re.compile(r"^\s*v?(\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.\-]+)?)\s*$")
 
 
@@ -48,6 +51,7 @@ def exact_pin(specifier: str | None, ecosystem: str) -> str | None:
     """The single version a specifier demands, if it demands exactly one."""
     if not specifier:
         return None
+    specifier = specifier.split(";", 1)[0]
     pattern = NPM_PIN if ecosystem == "npm" else PYPI_PIN
     match = pattern.match(specifier)
     if not match:
@@ -152,13 +156,32 @@ def _typo_budget(name: str) -> int:
     return 2 if len(name) >= 10 else 1
 
 
+def _normalise(name: str, ecosystem: str) -> str:
+    """The name as its own registry understands it.
+
+    PyPI treats `-`, `_` and `.` as one separator and ignores case (PEP 503),
+    so `typing_extensions` and `typing-extensions` are the same project. Without
+    this the popular-name list was missed on the underscore spelling and the
+    same package came back as a one-edit typo of itself. It is unreachable
+    today -- PyPI resolves both spellings, so such a name always exists and
+    never reaches the comparison -- but the function is public and the next
+    reader should not have to work that out.
+
+    npm does no such folding: `JSONStream` and `jsonstream` are two real and
+    different packages, so its names are compared as written.
+    """
+    if ecosystem == "pypi":
+        return re.sub(r"[-_.]+", "-", name).lower()
+    return name.lower()
+
+
 def _comparable(name: str, ecosystem: str) -> str:
     """The part of a name worth comparing.
 
     An npm squat on a scoped package targets the part after the slash, since
     the scope is usually owned by whoever it names.
     """
-    lowered = name.lower()
+    lowered = _normalise(name, ecosystem)
     if ecosystem == "npm" and lowered.startswith("@") and "/" in lowered:
         return lowered.rsplit("/", 1)[1]
     return lowered
@@ -170,7 +193,7 @@ def nearest_popular(name: str, ecosystem: str = "pypi") -> tuple[str, int] | Non
     if not popular:
         return None
 
-    lowered = name.lower()
+    lowered = _normalise(name, ecosystem)
     target = _comparable(name, ecosystem)
 
     if lowered in popular or target in popular:

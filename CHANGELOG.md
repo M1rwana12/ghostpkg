@@ -6,6 +6,46 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.19.2] - 2026-09-02
+
+Found by throwing hostile input at the parsers rather than by reading them.
+
+### Fixed
+- **A byte-order mark broke seven of the eight manifest formats, four of them
+  silently.** A file saved by Notepad, PowerShell's `Out-File`, or an editor set
+  to "UTF-8 with BOM" starts with U+FEFF. `pyproject.toml`, `package.json` and
+  `package-lock.json` raised a parse error; `poetry.lock`, `pnpm-lock.yaml` and
+  prose files returned **zero** packages; `requirements.txt` dropped only its
+  first line and the run then reported that everything looked fine. Files are
+  now read as `utf-8-sig`, which strips the mark when present and is identical
+  to `utf-8` when it is not, and every parser that takes text strips it too.
+- **An empty dependency key is no longer treated as a package name.**
+  `{"dependencies": {"": "^1"}}` produced an empty name, and the npm client then
+  requested `https://registry.npmjs.org/` -- the registry root -- and read
+  whatever came back as facts about it.
+- **`===` is recognised as a pin.** PEP 440 arbitrary equality is the only way
+  to name a version that does not normalise, and such a pin was never checked.
+- **A different spelling of a popular name is not a typo of it.** PyPI treats
+  `-`, `_` and `.` as one separator, so `typing_extensions` and
+  `typing-extensions` are the same project; comparing the raw spelling against
+  the popular-name list missed the match and made the package a one-edit typo of
+  itself. Unreachable in the product -- PyPI resolves both spellings, so the
+  name always exists -- but `nearest_popular` is public and the reasoning cost
+  more to reconstruct than the fix. npm names are still compared as written,
+  because `JSONStream` and `jsonstream` are two different real packages there.
+
+### Considered and rejected
+- **Reading `setup.py` with `ast`, without executing it.** Attractive on the
+  raw count -- 1.4M repositories have one. Measured across sixteen well-known
+  Python projects: **zero** had an `install_requires` an AST could read. Eight
+  have no `setup.py` at all, five have one with no `install_requires`, and three
+  compute it at runtime. The parser would read nothing on real projects.
+- **Auditing the installed environment.** The idea was to catch a package that
+  was removed from the registry after it was installed. Across 103 distributions
+  in four environments, **none** was missing upstream, so the case cannot be
+  verified -- and everything else such a command could report is the soft
+  signals that already measured 100% false on age alone.
+
 ## [0.19.1] - 2026-09-02
 
 ### Documentation
@@ -693,7 +733,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.19.1...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.19.2...HEAD
+[0.19.2]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.19.2
 [0.19.1]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.19.1
 [0.19.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.19.0
 [0.18.1]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.18.1
