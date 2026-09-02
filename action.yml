@@ -9,9 +9,9 @@ branding:
 inputs:
   paths:
     description: >-
-      Manifests, lockfiles, or a directory to search. Defaults to the whole
-      checkout, which finds every manifest while skipping node_modules, .venv
-      and other vendored trees.
+      Manifests, lockfiles, or a directory to search, separated by whitespace or
+      newlines. Defaults to the whole checkout, which finds every manifest while
+      skipping node_modules, .venv and other vendored trees.
     required: false
     default: "."
   strict:
@@ -64,15 +64,21 @@ runs:
       with:
         python-version: ${{ inputs.python-version }}
 
+    # Every input is passed through `env` rather than interpolated into the
+    # script. `${{ }}` is substituted into the text of the step before bash
+    # ever sees it, so an input containing a quote or a semicolon becomes part
+    # of the command -- the classic Actions template injection. Through `env`
+    # the value is data the shell reads, and metacharacters cannot escape.
     - name: Install ghostpkg
       if: ${{ inputs.install == 'true' }}
       shell: bash
+      env:
+        SPEC: ${{ inputs.version }}
       run: |
-        spec="${{ inputs.version }}"
-        case "$spec" in
+        case "$SPEC" in
           "")            python -m pip install --quiet "ghostpkg>=0.18.0" ;;
-          [0-9]*)        python -m pip install --quiet "ghostpkg==$spec" ;;
-          *)             python -m pip install --quiet "ghostpkg$spec" ;;
+          [0-9]*)        python -m pip install --quiet "ghostpkg==$SPEC" ;;
+          *)             python -m pip install --quiet "ghostpkg$SPEC" ;;
         esac
 
     - name: Report the version in use
@@ -82,13 +88,27 @@ runs:
     - name: Scan
       id: scan
       shell: bash
+      env:
+        PATHS: ${{ inputs.paths }}
+        STRICT: ${{ inputs.strict }}
+        DEEP: ${{ inputs.deep }}
+        FAIL_ON_ERROR: ${{ inputs.fail-on-error }}
       run: |
         args=()
-        [ "${{ inputs.strict }}" = "true" ] && args+=(--strict)
-        [ "${{ inputs.deep }}" = "true" ] && args+=(--deep)
+        [ "$STRICT" = "true" ] && args+=(--strict)
+        [ "$DEEP" = "true" ] && args+=(--deep)
+
+        # Split on whitespace, including newlines, so both `paths: a b` and a
+        # multi-line list work. A path containing a space has to be passed on
+        # its own; splitting is what makes several paths possible at all.
+        paths=()
+        while IFS= read -r item; do
+          [ -n "$item" ] && paths+=("$item")
+        done < <(printf '%s' "$PATHS" | tr -s ' \t\n' '\n')
+        [ ${#paths[@]} -eq 0 ] && paths=(.)
 
         set +e
-        ghostpkg scan ${{ inputs.paths }} --format github "${args[@]}"
+        ghostpkg scan "${paths[@]}" --format github "${args[@]}"
         code=$?
         set -e
 
@@ -100,6 +120,6 @@ runs:
         case "$code" in
           0) exit 0 ;;
           3) echo "::notice::ghostpkg found no manifests to check"; exit 0 ;;
-          2) [ "${{ inputs.fail-on-error }}" = "true" ] && exit 2 || exit 0 ;;
+          2) [ "$FAIL_ON_ERROR" = "true" ] && exit 2 || exit 0 ;;
           *) exit "$code" ;;
         esac

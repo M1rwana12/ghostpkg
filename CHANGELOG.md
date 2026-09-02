@@ -6,6 +6,31 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-09-02
+
+### Security
+- **The GitHub Action no longer interpolates its inputs into the shell script.**
+  `${{ inputs.paths }}` was substituted into the *text* of the step before bash
+  parsed it, so an input carrying a quote or a semicolon became part of the
+  command rather than an argument to it -- GitHub Actions template injection.
+  The same applied to `version`, `strict`, `deep` and `fail-on-error`.
+
+  Every input now arrives through `env:` and is read as a shell variable, which
+  makes it data rather than script. `paths` is split into an array explicitly,
+  so several paths still work; a path containing a space has to be passed on its
+  own.
+
+  Anyone pinned to `@v0.18.0` should move to `@v0.18.1`. Exploiting it required
+  a workflow that passes attacker-influenced text as an input -- the defaults
+  are static -- but that is a thin defence for a tool whose subject is
+  supply-chain trust, and it is not the example to set.
+
+  `tests/test_action.py` now fails if any `${{ }}` appears inside a `run:` body,
+  if an input stops being passed through `env:`, or if an expansion is left
+  unquoted, and it runs the real splitting logic against a payload that tries to
+  inject a command. PyYAML is a dev dependency for this; the runtime still has
+  none.
+
 ## [0.18.0] - 2026-09-02
 
 ### Added
@@ -595,7 +620,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.18.1...HEAD
+[0.18.1]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.18.1
 [0.18.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.18.0
 [0.17.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.17.0
 [0.16.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.16.0
