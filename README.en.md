@@ -121,7 +121,7 @@ ghostpkg scan package.json
 | `requirements*.txt` | Every requirement line. Comments, flags, VCS URLs and direct links are skipped. |
 | `pyproject.toml` | PEP 621 `project.dependencies` and `project.optional-dependencies`, plus Poetry's `tool.poetry` groups. `[build-system] requires` is not included, and the `python` constraint is not treated as a package. |
 | `package.json` | `dependencies`, `devDependencies`, `optionalDependencies`, `peerDependencies`. |
-| `package-lock.json` | Every locked package, both the v1 nested and v2/v3 `packages` layouts. Workspace links are skipped. |
+| `package-lock.json` | Every locked package, both the v1 nested and v2/v3 `packages` layouts. Workspace members and anything resolved from git, a path or a private registry are skipped. |
 | `poetry.lock`, `uv.lock` | Every locked package. |
 | `README`, `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `*.md` | Package names out of install commands written in prose. |
 

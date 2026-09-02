@@ -56,6 +56,39 @@ class Requirement:
 # and is not the public registry, so there is nothing for us to check.
 DIRECT_REFERENCE = re.compile(r"^\s*[A-Za-z0-9][A-Za-z0-9._-]*\s*(\[[^\]]*\])?\s*@\s")
 
+#: npm specifiers that name their own source. `workspace:` and `catalog:`
+#: resolve inside the repository, `file:`/`link:`/`portal:` to a directory, the
+#: rest to a URL or a git host. None of them is a name the registry knows, so
+#: the registry has no say -- the rule `name @ url` already gets in a
+#: requirements file, applied to the four formats that missed it.
+NPM_LOCAL_PREFIXES = (
+    "workspace:", "catalog:", "file:", "link:", "portal:", "patch:",
+    "git+", "git:", "http://", "https://",
+    "github:", "gitlab:", "bitbucket:", "gist:",
+)
+
+#: `"dep": "npm:real-name@^1"` installs `real-name` under a different key, so
+#: the name worth checking is the aliased one. Checking the key instead looked
+#: up an unrelated package that happened to exist and called it fine.
+NPM_ALIAS = re.compile(r"^npm:(@[^/]+/[^@]+|[^@/][^@]*)")
+
+#: `"dep": "owner/repo"` / `"owner/repo#semver:^1"` is GitHub shorthand. A
+#: version range never contains a slash, so this does not catch one.
+GITHUB_SHORTHAND = re.compile(r"^[\w.-]+/[\w.-]+(?:#.*)?$")
+
+#: Hosts that serve the public npm namespace, so a name resolved from one of
+#: them is a name npmjs.org can be asked about. A corporate registry
+#: (Artifactory, Nexus, Verdaccio) proxies those same names *and* hosts private
+#: ones under the same host, and nothing in the lockfile says which is which --
+#: so entries resolved from anywhere else are left alone rather than guessed
+#: at. That is the `--index-url` rule this project already learned once.
+PUBLIC_NPM_HOSTS = (
+    "registry.npmjs.org",
+    "registry.yarnpkg.com",
+    "registry.npmmirror.com",
+    "registry.npm.taobao.org",
+)
+
 REQUIREMENTS_NAMES = ("requirements", "constraints", "dev-requirements", "test-requirements")
 
 SUPPORTED = (
@@ -73,6 +106,31 @@ class UnsupportedManifest(ValueError):
 
 def _is_url(text: str) -> bool:
     return "://" in text
+
+
+def _is_path(text: str) -> bool:
+    return text.startswith(("./", "../", "/", "~/", ".\\", "..\\"))
+
+
+def npm_target(name: str, spec: "str | None") -> "str | None":
+    """The registry name to check, or None when the specifier states its source.
+
+    Measured on a monorepo `package.json`: without this, six of nine entries
+    were blocked as non-existent and two more were looked up under the wrong
+    name -- `link:../linked` found an unrelated `linked`, and the alias
+    `npm:lodash@^4` was checked as `aliased`.
+    """
+    if not spec:
+        return name
+    text = spec.strip()
+    alias = NPM_ALIAS.match(text)
+    if alias:
+        return alias.group(1)
+    if text.startswith(NPM_LOCAL_PREFIXES) or _is_path(text):
+        return None
+    if GITHUB_SHORTHAND.match(text):
+        return None
+    return name
 
 
 def parse_requirements(
@@ -185,9 +243,16 @@ def parse_package_json(text: str, source: str | None = None) -> list[Requirement
             if name in seen:
                 continue
             seen.add(name)
-            found.append(
-                Requirement(name=name, specifier=str(spec) if spec else None, source=source)
-            )
+            specifier = str(spec) if spec else None
+            target = npm_target(name, specifier)
+            if target is None:
+                continue  # the specifier names its own source
+            if target != name:
+                # An alias: check what actually gets installed, and drop the
+                # range, which belongs to the alias rather than to that name.
+                found.append(Requirement(name=target, source=source))
+                continue
+            found.append(Requirement(name=name, specifier=specifier, source=source))
     return found
 
 
@@ -226,7 +291,18 @@ def parse_package_lock(text: str, source: str | None = None) -> list[Requirement
             # The name is the path after the last node_modules segment, which
             # keeps scopes intact: node_modules/@types/node -> @types/node.
             marker = "node_modules/"
-            name = path[path.rfind(marker) + len(marker) :] if marker in path else path
+            if marker not in path:
+                # Keyed by a plain path: a workspace member, which is part of
+                # this project. Looking it up blocked every package in a
+                # monorepo.
+                continue
+            resolved = entry.get("resolved")
+            if isinstance(resolved, str) and resolved:
+                host = resolved.split("://", 1)[-1].split("/", 1)[0].split("@")[-1]
+                if host.split(":")[0] not in PUBLIC_NPM_HOSTS:
+                    # git, a path, or a registry whose namespace is not npmjs.
+                    continue
+            name = path[path.rfind(marker) + len(marker) :]
             add(str(entry.get("name") or name), entry.get("version"))
 
     def walk(section: dict) -> None:
@@ -252,19 +328,30 @@ LOCK_ENTRY_KEY = re.compile(r'^(name|version)\s*=\s*["\']([^"\']+)["\']')
 
 
 def parse_toml_lock(text: str, source: str | None = None) -> list[Requirement]:
-    """Dependencies from a `poetry.lock` or `uv.lock`."""
+    """Dependencies from a `poetry.lock` or `uv.lock`.
+
+    An entry is dropped when it says where it came from and that is not a
+    registry. Poetry writes a `[package.source]` sub-table for anything
+    non-default; uv writes an inline `source = { git = ... }` / `{ editable =
+    ... }` / `{ directory = ... }`, and only `{ registry = ... }` is a lookup we
+    can make. Without this a git-sourced entry was looked up on the public
+    registry, where `patched` matched an unrelated package and produced a
+    confident "version 1.0.0 does not exist" about it.
+    """
     found: list[Requirement] = []
     seen: set[str] = set()
     in_package = False
     name: str | None = None
     version: str | None = None
+    stated_source = False
 
     def flush() -> None:
-        nonlocal name, version
-        if name and name.lower() != "python" and name not in seen:
+        nonlocal name, version, stated_source
+        if name and name.lower() != "python" and name not in seen and not stated_source:
             seen.add(name)
             found.append(Requirement(name=name, specifier=version, source=source))
         name = version = None
+        stated_source = False
 
     for raw in text.splitlines():
         line = raw.split("#", 1)[0].strip()
@@ -273,10 +360,22 @@ def parse_toml_lock(text: str, source: str | None = None) -> list[Requirement]:
             in_package = line.startswith("[[package]]")
             continue
         if line.startswith("["):
-            flush()
-            in_package = False
+            table = line[1:-1].strip()
+            if table == "package.source":
+                # Poetry: a sub-table of the entry still being read, so mark it
+                # rather than ending the entry.
+                stated_source = True
+                continue
+            if not table.startswith("package."):
+                flush()
+                in_package = False
             continue
         if not in_package:
+            continue
+        if line.startswith("source") and "=" in line:
+            value = line.split("=", 1)[1].strip()
+            if value.startswith("{") and "registry" not in value:
+                stated_source = True  # uv: git, editable, directory, virtual
             continue
         match = LOCK_ENTRY_KEY.match(line)
         if match:
@@ -366,9 +465,42 @@ def _toml_table_keys(text: str, table: str) -> list[str]:
     return keys
 
 
+#: Keys that make a Poetry or uv dependency resolve from somewhere other than
+#: the index: `{ git = ... }`, `{ path = ... }`, `{ url = ... }`,
+#: `{ workspace = true }`.
+LOCAL_SOURCE_KEYS = ("git", "path", "url", "workspace")
+
+
 def _poetry_names(section: dict) -> list[str]:
-    # `python` is an interpreter constraint, not a package.
-    return [name for name in section if name.lower() != "python"]
+    """Names from a Poetry dependency table, minus those with a stated source.
+
+    `python` is an interpreter constraint, not a package. A dict value like
+    `{ git = "..." }` names its own source, so the index has no say.
+    """
+    names = []
+    for name, spec in section.items():
+        if name.lower() == "python":
+            continue
+        if isinstance(spec, dict) and any(k in spec for k in LOCAL_SOURCE_KEYS):
+            continue
+        names.append(name)
+    return names
+
+
+def _local_source_names(text: str, data: "dict | None") -> "set[str]":
+    """Names `[tool.uv.sources]` redirects away from the index.
+
+    Measured on pydantic's own `pyproject.toml`: `pydantic-docs` is declared in
+    `dependency-groups` and pointed at a git repository by `[tool.uv.sources]`.
+    It is not on PyPI, and without this ghostpkg blocked it -- a false block on
+    a real, widely used project.
+    """
+    if data is not None:
+        sources = ((data.get("tool") or {}).get("uv") or {}).get("sources")
+        if isinstance(sources, dict):
+            return {str(name) for name in sources}
+        return set()
+    return set(_toml_table_keys(text, "tool.uv.sources"))
 
 
 def parse_pyproject(text: str, source: str | None = None) -> list[Requirement]:
@@ -432,8 +564,13 @@ def parse_pyproject(text: str, source: str | None = None) -> list[Requirement]:
             for name in _toml_table_keys(text, table):
                 add_name(name)
 
+    local = _local_source_names(text, data if tomllib is not None else None)
     seen: set[str] = set()
-    return [r for r in found if not (r.name in seen or seen.add(r.name))]
+    return [
+        r
+        for r in found
+        if r.name not in local and not (r.name in seen or seen.add(r.name))
+    ]
 
 
 def _looks_like_requirements(name: str) -> bool:

@@ -6,6 +6,44 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-09-02
+
+### Fixed
+- **A dependency that names its own source is no longer looked up on the public
+  registry.** The rule was already in the codebase for `name @ url` in a
+  requirements file, and had never been applied to the other four parsers. Each
+  of these was measured against real files:
+  - `pyproject.toml`: **pydantic's own manifest was blocked.** `pydantic-docs`
+    is declared in a dependency group and pointed at a git repository by
+    `[tool.uv.sources]`; it is not on PyPI, so ghostpkg reported it as
+    non-existent. Poetry dependencies given as `{ git = ... }`, `{ path = ... }`
+    or `{ url = ... }` had the same problem.
+  - `package.json`: a monorepo produced **six false blocks out of nine** --
+    `workspace:`, `catalog:`, `file:`, `link:`, `portal:`, `git+`, tarball URLs,
+    `github:` and `owner/repo` shorthand, and relative paths.
+  - `package.json`: two entries were **silently checked under the wrong name**.
+    `link:../linked` was looked up as `linked`, an unrelated real package, and
+    reported fine. `npm:lodash@^4` is an alias, so the name to check is
+    `lodash`; ghostpkg checked the key instead.
+  - `package-lock.json`: workspace members keyed by a plain path were treated as
+    registry packages, and `resolved` was ignored -- a git-resolved entry named
+    `patched` matched an unrelated package and produced a confident
+    "version 1.0.0 does not exist" about it.
+  - `poetry.lock` / `uv.lock`: Poetry's `[package.source]` sub-table and uv's
+    inline `source = { git = ... }` / `{ editable = ... }` / `{ directory = ... }`
+    were ignored.
+
+  This is the failure mode the project treats as worse than a miss, so the fix
+  came before anything else. 41 tests were added, 35 of which fail against the
+  previous parser.
+
+- **Entries resolved from a private npm registry are left alone.** A corporate
+  registry proxies public names *and* hosts private ones under one host, and a
+  lockfile does not say which is which. Known public mirrors
+  (`registry.yarnpkg.com`, `registry.npmmirror.com`) are still checked, because
+  silently checking nothing and reporting success is the failure this project
+  already shipped once.
+
 ## [0.14.0] - 2026-09-01
 
 ### Changed
@@ -460,7 +498,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.15.0
 [0.14.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.14.0
 [0.13.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.13.0
 [0.12.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.12.0
