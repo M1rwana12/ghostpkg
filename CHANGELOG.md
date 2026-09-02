@@ -6,6 +6,40 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-09-02
+
+### Added
+- **`pnpm-lock.yaml` and `yarn.lock` are read.** Measured across twenty popular
+  JavaScript repositories, `package-lock.json` -- the only npm lockfile
+  ghostpkg could read -- was present in **two** of them; `pnpm-lock.yaml` was in
+  ten and `yarn.lock` in six. Four out of five projects had a lockfile the tool
+  refused to open.
+
+  Both are read line by line rather than with a YAML library, for the same
+  reason `pyproject.toml` has a hand-written fallback: a supply-chain tool that
+  installs a dependency tree of its own undermines its own argument.
+
+  - `pnpm-lock.yaml`: lockfile versions 5 (`/react/18.2.0`), 6
+    (`/react@18.2.0`) and 9 (`'react@18.2.0'`), including v9 peer resolutions in
+    parentheses and v5 peer suffixes after an underscore.
+  - `yarn.lock`: classic (v1) and berry (v2+), several descriptors per key, and
+    berry aliases -- `@babel-baseline/cli@npm:@babel/cli@7.27.1` is checked as
+    `@babel/cli`, the name that actually gets installed.
+  - Both apply the stated-source rule from 0.15.0: `workspace:`, `link:`,
+    `patch:`, `portal:`, `exec:`, `file:` and git or http descriptors are not
+    registry names.
+
+  Validated against the real lockfiles of React, Babel, Jest, Svelte, Vue and
+  Vite: **3,292 packages, zero blocks.**
+
+### Fixed
+- **A string `repository` field no longer crashes a scan.** npm documents both
+  `{"url": ...}` and the shorthand `"github:user/repo"`; ghostpkg assumed the
+  object and raised `AttributeError`, which aborted the whole run. It surfaced
+  the first time a lockfile was wide enough to contain one -- 435 packages in.
+  `parse_npm` is now separate from the request, so registry response shapes are
+  testable without a network round trip.
+
 ## [0.15.0] - 2026-09-02
 
 ### Fixed
@@ -498,7 +532,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.16.0
 [0.15.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.15.0
 [0.14.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.14.0
 [0.13.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.13.0

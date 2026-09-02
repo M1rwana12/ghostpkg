@@ -108,7 +108,8 @@ ghostpkg clear-cache
 | `--timeout SECONDS` | Тайм-аут на запит |
 
 `scan` розпізнає `requirements*.txt`, `pyproject.toml` (PEP 621, PEP 735 і Poetry),
-`package.json`, а також **lock-файли**: `package-lock.json`, `poetry.lock`, `uv.lock`.
+`package.json`, а також **lock-файли**: `package-lock.json`, `yarn.lock`
+(classic і berry), `pnpm-lock.yaml`, `poetry.lock`, `uv.lock`.
 Невідомий формат він **відхиляє з помилкою, а не вгадує**.
 
 Lock-файли варто перевіряти навіть якщо ви вже перевіряєте маніфест: **CI
@@ -127,7 +128,7 @@ Lock-файли варто перевіряти навіть якщо ви вж�
 Можна передати кілька файлів одразу, навіть із різних екосистем:
 
 ```bash
-ghostpkg scan requirements.txt package.json package-lock.json
+ghostpkg scan requirements.txt package.json pnpm-lock.yaml
 ```
 
 ---

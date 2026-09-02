@@ -67,10 +67,9 @@ NPM_LOCAL_PREFIXES = (
     "github:", "gitlab:", "bitbucket:", "gist:",
 )
 
-#: `"dep": "npm:real-name@^1"` installs `real-name` under a different key, so
-#: the name worth checking is the aliased one. Checking the key instead looked
-#: up an unrelated package that happened to exist and called it fine.
-NPM_ALIAS = re.compile(r"^npm:(@[^/]+/[^@]+|[^@/][^@]*)")
+#: A version range never starts with a letter, which is how `npm:lodash` is
+#: told apart from `npm:^4.17.19`.
+RANGE_START = "^~><=*0123456789 "
 
 #: `"dep": "owner/repo"` / `"owner/repo#semver:^1"` is GitHub shorthand. A
 #: version range never contains a slash, so this does not catch one.
@@ -93,7 +92,7 @@ REQUIREMENTS_NAMES = ("requirements", "constraints", "dev-requirements", "test-r
 
 SUPPORTED = (
     "requirements*.txt, *.in, pyproject.toml, package.json, "
-    "package-lock.json, poetry.lock, uv.lock, "
+    "package-lock.json, yarn.lock, pnpm-lock.yaml, poetry.lock, uv.lock, "
     "and prose files: README, AGENTS.md, *.md, .cursorrules"
 )
 
@@ -112,6 +111,24 @@ def _is_path(text: str) -> bool:
     return text.startswith(("./", "../", "/", "~/", ".\\", "..\\"))
 
 
+def npm_alias_target(spec: str) -> "str | None":
+    """The name an `npm:` specifier really installs, or None if it is a range.
+
+    `"dep": "npm:lodash@^4"` installs lodash under a different key, so lodash is
+    the name worth checking; looking up the key found an unrelated package that
+    happened to exist and reported it fine. Yarn writes every registry
+    descriptor this way (`lodash@npm:^4.17.19`), so most of what arrives here is
+    an ordinary range and must come back as None.
+    """
+    rest = spec[4:] if spec.startswith("npm:") else spec
+    if not rest:
+        return None
+    at = rest.rfind("@")
+    if at > 0:
+        return rest[:at]
+    return None if rest[0] in RANGE_START else rest
+
+
 def npm_target(name: str, spec: "str | None") -> "str | None":
     """The registry name to check, or None when the specifier states its source.
 
@@ -123,9 +140,8 @@ def npm_target(name: str, spec: "str | None") -> "str | None":
     if not spec:
         return name
     text = spec.strip()
-    alias = NPM_ALIAS.match(text)
-    if alias:
-        return alias.group(1)
+    if text.startswith("npm:"):
+        return npm_alias_target(text) or name
     if text.startswith(NPM_LOCAL_PREFIXES) or _is_path(text):
         return None
     if GITHUB_SHORTHAND.match(text):
@@ -627,6 +643,14 @@ def load_manifest(path: Path) -> tuple[list[Requirement], str]:
         return parse_package_json(path.read_text(encoding="utf-8"), source), "npm"
     if name == "package-lock.json":
         return parse_package_lock(path.read_text(encoding="utf-8"), source), "npm"
+    if name == "pnpm-lock.yaml":
+        from .jslocks import parse_pnpm_lock  # noqa: PLC0415
+
+        return parse_pnpm_lock(path.read_text(encoding="utf-8"), source), "npm"
+    if name == "yarn.lock":
+        from .jslocks import parse_yarn_lock  # noqa: PLC0415
+
+        return parse_yarn_lock(path.read_text(encoding="utf-8"), source), "npm"
     if name in ("poetry.lock", "uv.lock"):
         return parse_toml_lock(path.read_text(encoding="utf-8"), source), "pypi"
     if name == "pyproject.toml":

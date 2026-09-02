@@ -214,3 +214,53 @@ class TestArchiveUrlScheme:
     def test_only_https_is_fetched(self, url):
         with pytest.raises(InspectionError, match="refusing"):
             _download(url)
+
+
+class TestNpmMetadataShapes:
+    """npm's registry does not enforce a single shape for these fields, and a
+    scan that touched a thousand real packages found it out."""
+
+    def facts(self, payload):
+        import json as _json
+
+        from ghostpkg import registries
+
+        return registries.parse_npm("thing", _json.loads(_json.dumps(payload)))
+
+    def test_repository_as_a_string_does_not_crash(self):
+        """`"repository": "github:user/repo"` is the documented shorthand.
+        Assuming the object form raised AttributeError and took down a whole
+        scan the first time a lockfile was wide enough to contain one."""
+        facts = self.facts({
+            "name": "thing",
+            "repository": "github:user/repo",
+            "versions": {"1.0.0": {}},
+            "dist-tags": {"latest": "1.0.0"},
+        })
+        assert facts.has_repo_url is True
+
+    def test_repository_as_an_object_still_works(self):
+        facts = self.facts({
+            "name": "thing",
+            "repository": {"url": "git+https://github.com/user/repo.git"},
+            "versions": {"1.0.0": {}},
+            "dist-tags": {"latest": "1.0.0"},
+        })
+        assert facts.has_repo_url is True
+
+    def test_a_missing_repository_is_not_a_repo_url(self):
+        facts = self.facts({
+            "name": "thing",
+            "versions": {"1.0.0": {}},
+            "dist-tags": {"latest": "1.0.0"},
+        })
+        assert facts.has_repo_url is False
+
+    def test_a_security_hold_is_still_seen_through_the_string_form(self):
+        facts = self.facts({
+            "name": "thing",
+            "repository": "https://github.com/npm/security-holder",
+            "versions": {"1.0.0": {}},
+            "dist-tags": {"latest": "1.0.0"},
+        })
+        assert facts.security_hold is True

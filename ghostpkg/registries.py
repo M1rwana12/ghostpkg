@@ -200,13 +200,32 @@ def fetch_npm(name: str) -> PackageFacts:
     payload = _get_json(f"https://registry.npmjs.org/{quoted}")
     if payload is None:
         return PackageFacts(name=name, ecosystem="npm", exists=False)
+    return parse_npm(name, payload)
 
+
+def parse_npm(name: str, payload: dict) -> PackageFacts:
+    """Facts from an npm registry document.
+
+    Kept separate from the request so the shapes npm actually returns can be
+    tested without a network round trip -- the registry does not enforce one
+    shape per field, and a scan wide enough to touch a thousand real packages
+    is how that gets discovered.
+    """
     time_map = payload.get("time") or {}
     created = time_map.get("created")
     age = _age_in_days(created) if created else None
 
     versions = payload.get("versions") or {}
-    repository = payload.get("repository") or {}
+    # npm allows both `{"url": ...}` and the string shorthand `"github:a/b"`.
+    # Assuming the object crashed a whole scan the first time a real lockfile
+    # was wide enough to contain one.
+    raw_repository = payload.get("repository")
+    if isinstance(raw_repository, str):
+        repository_url = raw_repository
+    elif isinstance(raw_repository, dict):
+        repository_url = str(raw_repository.get("url") or "")
+    else:
+        repository_url = ""
     homepage = payload.get("homepage") or ""
 
     latest = (payload.get("dist-tags") or {}).get("latest")
@@ -218,13 +237,13 @@ def fetch_npm(name: str) -> PackageFacts:
         exists=True,
         age_days=age,
         release_count=len(versions),
-        has_repo_url=bool(repository.get("url")) or bool(homepage),
+        has_repo_url=bool(repository_url) or bool(homepage),
         latest_version=latest,
         summary=payload.get("description") or None,
         archive_url=dist.get("tarball"),
         archive_size=dist.get("unpackedSize"),
         versions=tuple(versions),
-        security_hold=SECURITY_HOLDER in str(repository.get("url") or ""),
+        security_hold=SECURITY_HOLDER in repository_url,
     )
 
 

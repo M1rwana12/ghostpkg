@@ -122,6 +122,8 @@ ghostpkg scan package.json
 | `pyproject.toml` | PEP 621 `project.dependencies` and `project.optional-dependencies`, plus Poetry's `tool.poetry` groups. `[build-system] requires` is not included, and the `python` constraint is not treated as a package. |
 | `package.json` | `dependencies`, `devDependencies`, `optionalDependencies`, `peerDependencies`. |
 | `package-lock.json` | Every locked package, both the v1 nested and v2/v3 `packages` layouts. Workspace members and anything resolved from git, a path or a private registry are skipped. |
+| `yarn.lock` | Every locked package, classic (v1) and berry (v2+). Aliases are checked under the name that actually gets installed. |
+| `pnpm-lock.yaml` | Every locked package, lockfile versions 5, 6 and 9. |
 | `poetry.lock`, `uv.lock` | Every locked package. |
 | `README`, `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `*.md` | Package names out of install commands written in prose. |
 
@@ -144,7 +146,7 @@ version-pinned, so all of them are checkable.
 Several files can be scanned in one run, and they may be different ecosystems:
 
 ```bash
-ghostpkg scan requirements.txt package.json package-lock.json
+ghostpkg scan requirements.txt package.json pnpm-lock.yaml
 ```
 
 Anything else is **refused with an error rather than guessed at**. Guessing is
