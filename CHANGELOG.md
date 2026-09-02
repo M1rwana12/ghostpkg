@@ -6,6 +6,34 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-09-02
+
+### Added
+- **A GitHub Action.** `uses: M1rwana12/ghostpkg@v0.18.0` is the whole step.
+  Inputs: `paths`, `strict`, `deep`, `version`, `python-version`,
+  `fail-on-error`.
+- **A pre-commit hook.** `repo: https://github.com/M1rwana12/ghostpkg` with
+  `id: ghostpkg`. It receives only the staged files that match, so it costs one
+  registry lookup per changed dependency rather than a full scan per commit.
+- **`--format github`** emits workflow commands, so a pull request is annotated
+  on the offending line instead of the answer sitting in a job log. A blocking
+  finding is an error and a soft signal is a warning, which keeps the
+  annotations and the exit code in agreement about severity. `%`, newlines,
+  `:` and `,` are escaped, since an unescaped one silently truncates or splits
+  the annotation.
+- **Findings carry the file and line the name came from**, in the text output
+  (`ghost-pkg  (requirements.txt:12)`) and in `--json` as `source` and `line`.
+  Once a scan can search a whole directory, "does not exist" without saying
+  which of six files it came from is a finding the reader has to go looking for.
+  A name written in two files now produces a finding for each, still on one
+  registry lookup.
+
+### Internal
+- A `publish.yml` workflow for PyPI Trusted Publishing, so releases are built
+  in CI from a tag and signed by an OIDC exchange rather than uploaded from a
+  laptop with a token in the shell. It runs only when started by hand until the
+  publisher is registered on PyPI.
+
 ## [0.17.0] - 2026-09-02
 
 ### Added
@@ -567,7 +595,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.18.0
 [0.17.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.17.0
 [0.16.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.16.0
 [0.15.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.15.0

@@ -78,6 +78,12 @@ class Finding:
     #: reason downgrades the verdict instead of leaving a block with no
     #: explanation attached to it.
     blocking: tuple[str, ...] = ()
+    #: Where the name was written. Once a scan can search a whole directory,
+    #: "does not exist" without saying which of six files it came from is a
+    #: finding the reader has to go and look for by hand. It is also what a CI
+    #: annotation needs in order to point at a line.
+    source: str | None = None
+    line: int | None = None
 
     @property
     def is_blocked(self) -> bool:

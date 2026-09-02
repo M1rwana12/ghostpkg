@@ -1,0 +1,41 @@
+# Usage, in a project's .pre-commit-config.yaml:
+#
+#   repos:
+#     - repo: https://github.com/M1rwana12/ghostpkg
+#       rev: v0.18.0
+#       hooks:
+#         - id: ghostpkg
+#
+# The hook receives only the staged files that match, so it costs one registry
+# lookup per changed dependency rather than a full scan on every commit.
+
+- id: ghostpkg
+  name: ghostpkg
+  description: Catch package names that do not exist before you install them
+  entry: ghostpkg scan
+  language: python
+  pass_filenames: true
+  require_serial: true
+  files: >-
+    (?x)^(
+      .*/)?(
+      requirements[^/]*\.(txt|in)
+      |constraints[^/]*\.txt
+      |pyproject\.toml
+      |package\.json
+      |package-lock\.json
+      |yarn\.lock
+      |pnpm-lock\.yaml
+      |poetry\.lock
+      |uv\.lock
+      |AGENTS\.md
+      |CLAUDE\.md
+      |\.cursorrules
+    )$
+  # A vendored tree is not this project's dependency list, and node_modules
+  # alone would hand the hook a package.json per installed package.
+  exclude: >-
+    (?x)^(
+      .*/)?(
+      node_modules|\.venv|venv|vendor|dist|build|__pycache__|site-packages
+    )/

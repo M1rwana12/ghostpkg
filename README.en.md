@@ -332,25 +332,42 @@ length, and only applies to packages young enough to plausibly be a squat.
 ### In CI
 
 ```yaml
-- name: Check dependencies exist
-  run: |
-    pip install ghostpkg
-    ghostpkg scan requirements.txt
+- uses: M1rwana12/ghostpkg@v0.18.0
+```
+
+That is the whole step. It searches the checkout, skips `node_modules` and
+friends, and **annotates the pull request diff on the offending line** rather
+than leaving the answer in a job log:
+
+```
+::error file=requirements.txt,line=12,title=ghostpkg GP001::fastapi-auth-helper: does not exist on pypi
+```
+
+A blocking finding is an error and a soft signal is a warning, so the
+annotations and the exit code agree about severity.
+
+Optional inputs -- `paths`, `strict`, `deep`, `version`, `python-version`,
+`fail-on-error`. Pin `version` if you want the run to be reproducible.
+
+Or without the action, if you prefer:
+
+```yaml
+- run: pip install ghostpkg && ghostpkg scan --format github
 ```
 
 ### As a pre-commit hook
 
 ```yaml
 repos:
-  - repo: local
+  - repo: https://github.com/M1rwana12/ghostpkg
+    rev: v0.18.0
     hooks:
       - id: ghostpkg
-        name: ghostpkg
-        entry: ghostpkg scan requirements.txt
-        language: system
-        files: requirements\.txt$
-        pass_filenames: false
 ```
+
+The hook receives only the staged files that match, so it costs one registry
+lookup per changed dependency rather than a full scan on every commit. Vendored
+trees are excluded.
 
 ### In front of a coding agent
 

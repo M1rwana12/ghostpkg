@@ -1,0 +1,91 @@
+name: ghostpkg
+description: Catch package names that do not exist before you install them
+author: m1rwana12
+
+branding:
+  icon: shield
+  color: purple
+
+inputs:
+  paths:
+    description: >-
+      Manifests, lockfiles, or a directory to search. Defaults to the whole
+      checkout, which finds every manifest while skipping node_modules, .venv
+      and other vendored trees.
+    required: false
+    default: "."
+  strict:
+    description: >-
+      Treat warnings as blocking. Off by default, and worth leaving off: a
+      legitimate package published this week is indistinguishable from a
+      slopsquat, so strict mode flags real dependencies too.
+    required: false
+    default: "false"
+  deep:
+    description: >-
+      Download recently published packages and statically inspect their install
+      scripts. Nothing is ever executed.
+    required: false
+    default: "false"
+  version:
+    description: Version of ghostpkg to install. Pin it for reproducible runs.
+    required: false
+    default: ""
+  python-version:
+    description: Python used to run ghostpkg, not the version your project targets.
+    required: false
+    default: "3.12"
+  fail-on-error:
+    description: >-
+      Fail the job when a name could not be checked at all -- a registry
+      timeout, say. On by default, because an unchecked name is not a pass.
+    required: false
+    default: "true"
+
+outputs:
+  exit-code:
+    description: "0 clean, 1 something blocked, 2 something unchecked, 3 nothing found"
+    value: ${{ steps.scan.outputs.exit-code }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install ghostpkg
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.version }}" ]; then
+          python -m pip install --quiet "ghostpkg==${{ inputs.version }}"
+        else
+          python -m pip install --quiet ghostpkg
+        fi
+        ghostpkg --version
+
+    - name: Scan
+      id: scan
+      shell: bash
+      run: |
+        args=()
+        [ "${{ inputs.strict }}" = "true" ] && args+=(--strict)
+        [ "${{ inputs.deep }}" = "true" ] && args+=(--deep)
+
+        set +e
+        ghostpkg scan ${{ inputs.paths }} --format github "${args[@]}"
+        code=$?
+        set -e
+
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+
+        # 3 means no manifest was found. That is not a pass, but in a workflow
+        # that runs on every push it is also not a failure worth stopping for --
+        # a docs-only repository would fail forever. It is reported and skipped.
+        case "$code" in
+          0) exit 0 ;;
+          3) echo "::notice::ghostpkg found no manifests to check"; exit 0 ;;
+          2) [ "${{ inputs.fail-on-error }}" = "true" ] && exit 2 || exit 0 ;;
+          *) exit "$code" ;;
+        esac

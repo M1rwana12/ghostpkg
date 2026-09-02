@@ -17,7 +17,7 @@ from .cache import Cache
 from .discover import discover
 from .manifests import UnsupportedManifest, load_manifest, parse_requirements
 from .policy import PolicyError, apply as apply_policy, load as load_policy
-from .report import Palette, as_json, render, summarise, use_colour
+from .report import Palette, as_github, as_json, render, summarise, use_colour
 from .scanner import DEFAULT_WORKERS, evaluate
 
 EXIT_OK = 0
@@ -59,7 +59,16 @@ def build_parser() -> argparse.ArgumentParser:
             action="store_true",
             help="treat warnings as blocking (flags legitimate new packages too)",
         )
-        command.add_argument("--json", action="store_true", help="machine-readable output")
+        command.add_argument(
+            "--format",
+            choices=("text", "json", "github"),
+            default="text",
+            help="text for a terminal, json for a program, github for "
+            "annotations on a pull request diff",
+        )
+        command.add_argument(
+            "--json", action="store_true", help="the same as --format json"
+        )
         command.add_argument("-q", "--quiet", action="store_true", help="hide passing packages")
         command.add_argument(
             "--no-cache", action="store_true", help="ignore and do not write the cache"
@@ -178,8 +187,15 @@ def main(argv: list[str] | None = None) -> int:
         _, used = apply_policy(finding, policy)
         suppressed += bool(used)
 
-    if args.json:
+    output = "json" if args.json else args.format
+    if output == "json":
         print(as_json(findings))
+    elif output == "github":
+        annotations = as_github(findings)
+        if annotations:
+            print(annotations)
+        palette = Palette(False)
+        summarise(findings, palette, suppressed, policy_path)
     else:
         palette = Palette(use_colour(sys.stdout))
         render(findings, palette, args.quiet)

@@ -1,0 +1,79 @@
+# Publishing to PyPI without a stored API token.
+#
+# PyPI mints a short-lived credential for this exact workflow in this exact
+# repository, so there is no long-lived secret to leak and the release carries
+# an attestation tying it to the commit it was built from. For a tool whose
+# whole subject is supply-chain trust, publishing from a laptop with a token
+# pasted into the shell is the wrong example to set.
+#
+# ONE-TIME SETUP, on pypi.org -> ghostpkg -> Manage -> Publishing:
+#   Owner:              M1rwana12
+#   Repository name:    ghostpkg
+#   Workflow name:      publish.yml
+#   Environment name:   pypi
+# Until that exists, this workflow will fail -- which is why it only runs when
+# started by hand. Once a run has succeeded, add:
+#
+#   release:
+#     types: [published]
+#
+# to the triggers below so tagging a release is enough.
+
+name: publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to build and publish, e.g. v0.18.0
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build
+        run: |
+          python -m pip install --quiet build twine
+          python -m build
+          python -m twine check dist/*
+
+      - name: Check the tag matches the version in the package
+        run: |
+          version=$(python -c "import ghostpkg; print(ghostpkg.__version__)")
+          if [ "v$version" != "${{ inputs.tag }}" ]; then
+            echo "::error::tag ${{ inputs.tag }} does not match __version__ $version"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      # The whole point: an OIDC token is exchanged with PyPI for a credential
+      # scoped to this project, instead of a stored API token.
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1

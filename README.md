@@ -145,6 +145,43 @@ ghostpkg scan ../інший-проєкт
 
 ---
 
+## Куди це вбудовується
+
+### У CI
+
+```yaml
+- uses: M1rwana12/ghostpkg@v0.18.0
+```
+
+Це весь крок. Він шукає маніфести в чекауті, обходить `node_modules` і подібні
+теки, і **лишає анотацію просто на рядку в дифі pull request**, а не відповідь
+десь у логах:
+
+```
+::error file=requirements.txt,line=12,title=ghostpkg GP001::fastapi-auth-helper: does not exist on pypi
+```
+
+Блокувальна знахідка — помилка, м'який сигнал — попередження, тож анотації й код
+виходу не суперечать одне одному.
+
+Необов'язкові входи: `paths`, `strict`, `deep`, `version`, `python-version`,
+`fail-on-error`.
+
+### Як хук pre-commit
+
+```yaml
+repos:
+  - repo: https://github.com/M1rwana12/ghostpkg
+    rev: v0.18.0
+    hooks:
+      - id: ghostpkg
+```
+
+Хук отримує лише ті staged-файли, що підходять, тож коштує один запит на змінену
+залежність, а не повний скан на кожен коміт.
+
+---
+
 ## Що саме перевіряється
 
 | Сигнал | Вердикт |

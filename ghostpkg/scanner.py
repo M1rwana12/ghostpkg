@@ -7,6 +7,7 @@ that is not a terminal -- a hook, an editor, a server.
 from __future__ import annotations
 
 import concurrent.futures
+from dataclasses import replace
 
 from .assess import NEW_DAYS, Finding, Verdict, assess
 from .cache import Cache
@@ -49,6 +50,8 @@ def evaluate(
                 ecosystem=ecosystem,
                 verdict=Verdict.ERROR,
                 reasons=[Reason(GP_UNCHECKED, f"could not check: {exc}")],
+                source=requirement.source,
+                line=requirement.line,
             )
 
         signals = None
@@ -74,6 +77,8 @@ def evaluate(
         finding = assess(
             facts, strict=strict, signals=signals, specifier=requirement.specifier
         )
+        finding.source = requirement.source
+        finding.line = requirement.line
         # Saying nothing would let "could not inspect" read as "inspected and
         # clean" -- and padding an archive past the size limit would then be a
         # way to switch --deep off from the outside.
@@ -96,4 +101,11 @@ def evaluate(
         results = dict(zip(unique, pool.map(one, unique.values())))
     if cache:
         cache.save()
-    return [results[(item.name, item.specifier)] for item in items]
+
+    # One lookup, but one finding per place the name was written -- otherwise
+    # the same package listed in two files reports whichever was looked up.
+    findings = []
+    for item in items:
+        shared = results[(item.name, item.specifier)]
+        findings.append(replace(shared, source=item.source, line=item.line))
+    return findings
