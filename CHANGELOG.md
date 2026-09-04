@@ -6,6 +6,49 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-09-04
+
+The gate now runs in CI, and it scanned **88,904 packages across sixteen
+repositories**. Six blocks, and **all six are real** -- unsatisfiable pins in
+Ray and a package next.js references that was never published. Zero false
+positives at that scale is the number this project exists to hold.
+
+### Added
+- **A scope the project already leans on is no longer treated as a stranger.**
+  Almost all remaining noise was "published under a year ago" on the dozen
+  platform binaries a compiled tool ships at once:
+  `@oxfmt/binding-darwin-arm64`, `@oxc-parser/binding-linux-riscv64-musl`.
+
+  The justification is structural rather than statistical: **an npm scope is
+  owned**. To publish `@oxfmt/anything` you must control `@oxfmt`, so a young
+  package in a scope the scan already depends on three times over is the same
+  publisher shipping another build.
+
+  Measured before it was built -- two members silences 41% of warnings, three
+  silences 40%, six silences 39%, so the threshold sits where it is defensible
+  rather than where it is largest. In practice: Sentry **114 warnings to 22**,
+  Vue **15 to 5**, and no change whatever to the block count. A squatted scope
+  (`@types-node` is not `@types/node`) appears once in a scan, not three times,
+  which is what the threshold separates. Nothing that blocks is affected, and
+  neither is the lookalike check.
+
+- **`.github/workflows/field.yml`** runs the gate nightly and on any push that
+  touches the scanner. On Linux, because `vercel/next.js` cannot be cloned on
+  Windows -- a path in its test fixtures exceeds the limit, so the largest
+  monorepo in the set was unreachable until now.
+
+- The repository list is **sixteen**, each carrying a note saying which defect
+  it found, so a future reader can tell why the list is what it is instead of
+  trimming it for being slow.
+
+### Verified
+`EXPECTED` now records the three names that genuinely do not exist, each
+checked against the registry by hand: `jaxlib==0.4.17` (PyPI's oldest is
+0.4.18), `tensorflow-macos==2.20.0` (Apple stopped at 2.16.2), and
+`tsconfig-mod` (404 on npm).
+
+707 tests.
+
 ## [0.23.0] - 2026-09-04
 
 Mutation testing: 186 single-line changes to the source, each run against the
@@ -940,7 +983,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.24.0
 [0.23.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.23.0
 [0.22.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.22.0
 [0.21.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.21.0

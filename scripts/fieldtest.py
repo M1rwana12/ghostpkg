@@ -55,8 +55,25 @@ REPOS = [
 ]
 
 #: Blocks that are correct. A repository may genuinely depend on something that
-#: no longer exists; each entry needs a reason a reader can check.
-EXPECTED: dict[str, str] = {}
+#: does not exist, and every entry here was verified against the registry by
+#: hand -- the reason has to be checkable by the next reader.
+#:
+#: Across 88,904 packages in sixteen repositories these six are the only blocks,
+#: and all six are real. That is the number the gate exists to hold.
+EXPECTED = {
+    # PyPI's jaxlib release list begins at 0.4.18. Older wheels were served
+    # from Google storage and the PyPI records were removed, so
+    # `pip install -r` on that file fails today.
+    "jaxlib": "ray pins 0.4.17; PyPI's oldest jaxlib release is 0.4.18",
+
+    # Apple stopped publishing tensorflow-macos at 2.16.2. Ray copied the
+    # `tensorflow==2.20.0` pin onto the macOS package, guarded by a
+    # `sys_platform == 'darwin'` marker, so it only fails on a Mac.
+    "tensorflow-macos": "ray pins 2.20.0; PyPI's newest is 2.16.2",
+
+    # 404 on npmjs.
+    "tsconfig-mod": "referenced by next.js and not published on npm",
+}
 
 CACHE = Path(tempfile.gettempdir()) / "ghostpkg-fieldtest"
 

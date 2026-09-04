@@ -9,7 +9,7 @@ from __future__ import annotations
 import concurrent.futures
 from dataclasses import replace
 
-from .assess import NEW_DAYS, Finding, Verdict, assess, exact_pin
+from .assess import NEW_DAYS, Finding, Verdict, assess, exact_pin, trusted_scopes
 from .cache import Cache
 from .inspection import InspectionError, inspect_package
 from .manifests import Requirement
@@ -30,6 +30,7 @@ def evaluate(
     items = [
         r if isinstance(r, Requirement) else Requirement(name=r) for r in requirements
     ]
+    scopes = trusted_scopes([item.name for item in items])
 
     def one(requirement: Requirement) -> Finding:
         name = requirement.name
@@ -94,6 +95,7 @@ def evaluate(
             # A constraints entry is a bound, not an install, so its pin is not
             # a claim that such a version exists. The name is still checked.
             specifier=None if requirement.constraint else requirement.specifier,
+            known_scope=name.split("/", 1)[0] in scopes if name.startswith("@") else False,
         )
         finding.source = requirement.source
         finding.line = requirement.line
