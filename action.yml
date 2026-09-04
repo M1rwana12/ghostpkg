@@ -1,4 +1,8 @@
-name: ghostpkg
+# The Marketplace requires a name unique across every action, user and
+# organisation on GitHub, and `ghostpkg` is taken by an existing account. This
+# is the display name there only -- the repository, the PyPI package and
+# `uses: M1rwana12/ghostpkg@v...` are all unchanged.
+name: ghostpkg - hallucinated package check
 description: Catch package names that do not exist before you install them
 author: m1rwana12
 
