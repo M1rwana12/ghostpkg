@@ -67,3 +67,6 @@ PLAN.md
 
 # Banner art-direction options (working files, not shipped)
 banner-options/
+
+# Agent scratch worktrees
+.claude/
