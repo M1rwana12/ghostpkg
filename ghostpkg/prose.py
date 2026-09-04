@@ -73,11 +73,19 @@ def looks_like_prose(filename: str) -> bool:
 SENTENCE_END = ".,;:!?)"
 
 
-def _clean(token: str) -> "tuple[str | None, bool]":
-    """(package name, whether the command ended here).
+#: Where a version starts in an install argument. npm writes `react@18`, pip
+#: writes `flask==3.0`, and both were dropped entirely: the `@` was read as a
+#: direct reference and the `==` made the token stop matching the name pattern.
+#: A pinned install command is the commonest form there is, so prose extraction
+#: was silently skipping most of what it existed to read.
+PIN = re.compile(r"(===|==|>=|<=|~=|!=|[<>@])")
 
-    Returning the second value matters more than it looks. Measured against ten
-    real READMEs, letting a command run past the end of its sentence produced a
+
+def _clean(token: str) -> "tuple[str | None, str | None, bool]":
+    """(package name, version, whether the command ended here).
+
+    The third value matters more than it looks. Measured against ten real
+    READMEs, letting a command run past the end of its sentence produced a
     **25% false-positive rate** -- `The`, `command`, `line`, `client`, `is` all
     came back as package names from one httpx line.
     """
@@ -87,22 +95,41 @@ def _clean(token: str) -> "tuple[str | None, bool]":
         token = token[:-1]
         stop = True
     if not token or token.startswith("-"):
-        return None, stop
-    # A path, a URL, an archive or a direct reference names its own source.
-    if "://" in token or token.startswith((".", "/", "~")) or "@" in token[1:]:
-        return None, stop
+        return None, None, stop
+    if "://" in token or token.startswith((".", "/", "~")):
+        return None, None, stop
     if token.endswith((".whl", ".tar.gz", ".tgz", ".zip", ".txt", ".toml", ".json")):
-        return None, stop
+        return None, None, stop
+
+    # Split the version off. A scoped npm name starts with `@`, so the search
+    # begins at the second character.
+    specifier = None
+    match = PIN.search(token, 1)
+    if match:
+        rest = token[match.start() :]
+        token, specifier = token[: match.start()], token[match.end() :].strip() or None
+        # `pkg@https://...`, `pkg@file:../x`, `pkg@owner/repo` state their own
+        # source, and the registry has nothing to say about them.
+        if rest.startswith("@") and (
+            specifier is None
+            or "://" in specifier
+            or ":" in specifier
+            or "/" in specifier
+        ):
+            return None, None, stop
+
     # `fastapi[standard]` names fastapi; the extras are not part of it.
     token = re.sub(r"\[[^\]]*\]$", "", token)
     if not token:
-        return None, stop
+        return None, None, stop
     match = NAME.match(token)
     if not match or match.group(1) != token:
-        return None, stop
+        return None, None, stop
     name = match.group(1)
     # `npm install` with no argument, or a lone dot, installs the local project.
-    return (name if name not in (".", "..") else None), stop
+    if name in (".", ".."):
+        return None, None, stop
+    return name, specifier, stop
 
 
 def _split_commands(line: str) -> list[str]:
@@ -191,7 +218,7 @@ def extract(text: str, source: str | None = None) -> list[Requirement]:
                     # An ordinary flag like --upgrade. Not a name, but not the
                     # end of the command either.
                     continue
-                name, ends_here = _clean(token)
+                name, specifier, ends_here = _clean(token)
                 if name is None:
                     # Prose has begun. Anything further on this line is English.
                     break
@@ -200,6 +227,7 @@ def extract(text: str, source: str | None = None) -> list[Requirement]:
                     found.append(
                         Requirement(
                             name=name,
+                            specifier=specifier,
                             line=number,
                             source=source,
                             ecosystem=ecosystem,

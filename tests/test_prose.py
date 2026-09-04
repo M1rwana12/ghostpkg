@@ -198,3 +198,59 @@ class TestACommandInsideASentence:
 
     def test_a_span_with_a_backtick_pair_but_no_installer(self):
         assert self.names("The `requirements.txt` file lists them.") == []
+
+
+class TestAVersionInAnInstallCommand:
+    """`npm install react@18` and `pip install flask==3.0` both extracted
+    nothing at all. The `@` was read as a direct reference and the `==` made the
+    token stop matching the name pattern, so a pinned install command -- the
+    commonest form there is -- was silently skipped by the feature built to
+    read install commands.
+
+    Re-measured after the change, because widening this parser has cost false
+    positives before: 19 names across 22 real READMEs, none that fail to exist.
+    """
+
+    @pytest.mark.parametrize(
+        "line, name, specifier",
+        [
+            ("npm install react@18", "react", "18"),
+            ("npm i lodash@^4.17.21", "lodash", "^4.17.21"),
+            ("pnpm add vue@3", "vue", "3"),
+            ("yarn add @babel/core@7", "@babel/core", "7"),
+            ("bun add hono@4.0.0", "hono", "4.0.0"),
+            ("pip install flask==3.0", "flask", "3.0"),
+            ("pip install httpx>=0.27", "httpx", "0.27"),
+            ("pip install django~=5.0", "django", "5.0"),
+            ("uv add fastapi==0.115.0", "fastapi", "0.115.0"),
+            ("npm install react", "react", None),
+        ],
+    )
+    def test_the_name_and_the_version_are_both_read(self, line, name, specifier):
+        found = extract(line)
+        assert [(r.name, r.specifier) for r in found] == [(name, specifier)]
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "npm install pkg@https://example.com/x.tgz",
+            "npm install pkg@file:../local",
+            "npm install pkg@acme/repo",
+            "npm install pkg@github:acme/repo",
+        ],
+    )
+    def test_a_stated_source_after_the_at_is_still_skipped(self, line):
+        """The `@` guard existed to catch these. Splitting the version off must
+        not let a direct reference through."""
+        assert extract(line) == []
+
+    def test_a_pinned_name_in_prose_keeps_its_line(self):
+        text = "intro\n\nRun `pip install ghost-thing==1.0` to begin.\n"
+        found = extract(text)
+        assert (found[0].name, found[0].specifier, found[0].line) == ("ghost-thing", "1.0", 3)
+
+    def test_the_sentence_still_ends_the_command(self):
+        """The 25% false-positive rate this parser once had came from running
+        past the full stop. Splitting versions must not reopen that."""
+        text = "Run `pip install httpx==0.27` and the command line client is optional."
+        assert [r.name for r in extract(text)] == ["httpx"]

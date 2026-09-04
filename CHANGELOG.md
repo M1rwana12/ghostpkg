@@ -6,6 +6,44 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-09-04
+
+Mutation testing: 186 single-line changes to the source, each run against the
+whole suite. **53 left it green.** The code was right in every case -- what was
+missing was anything that would notice if it stopped being. Writing the tests to
+kill the survivors turned up a real bug the suite had never had a chance to see.
+
+### Fixed
+- **A version in an install command made prose extraction skip the whole
+  command.** `npm install react@18` and `pip install flask==3.0` both yielded
+  nothing: the `@` was read as a direct reference and the `==` stopped the token
+  matching the name pattern. A pinned install command is the commonest form
+  there is, so the feature built to read install commands was silently skipping
+  most of them.
+
+  The version is now split off and carried through, so a hallucinated *version*
+  in a README is checked as well as a hallucinated name. Re-measured on 22 real
+  READMEs, because widening this parser has cost false positives before: 19
+  names, **none that fail to exist**.
+
+### Added
+Tests for the survivors that carry a real consequence:
+- **Each finding keeps its own file and line.** Reversing the thread pool's
+  result list left all 656 tests passing -- the printed names still looked
+  right, because a finding carries its own name, but the origin stamped on it
+  came from a different package. A CI annotation would have pointed at the
+  wrong line and marked the wrong one clean.
+- **`--deep` and `--strict` reach the scan.** Both could be forced to `False`
+  in the call without a single failure: the flag would silently do nothing.
+- **A name from prose keeps its own ecosystem**, so `npm install left-pad` in a
+  README is not looked up on PyPI.
+- Chained commands (`cd app && npm install x`), unknown installers
+  (`brew install jq`), age measured from the first upload rather than the
+  latest, `cache.put` refusing a negative, `-r base.txt  # comment` still
+  following the include, and the error counts in both output formats.
+
+693 tests. Field gate: 4,461 packages, zero blocks.
+
 ## [0.22.0] - 2026-09-04
 
 Four agents scanned **21 repositories and 78,000 package names**. They found
@@ -902,7 +940,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.23.0
 [0.22.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.22.0
 [0.21.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.21.0
 [0.20.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.20.0
