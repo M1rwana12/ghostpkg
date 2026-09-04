@@ -9,7 +9,7 @@ from __future__ import annotations
 import concurrent.futures
 from dataclasses import replace
 
-from .assess import NEW_DAYS, Finding, Verdict, assess
+from .assess import NEW_DAYS, Finding, Verdict, assess, exact_pin
 from .cache import Cache
 from .inspection import InspectionError, inspect_package
 from .manifests import Requirement
@@ -44,6 +44,19 @@ def evaluate(
                 facts = fetch(name, ecosystem)
                 if cache:
                     cache.put(facts)
+            elif requirement.specifier and not requirement.constraint:
+                # A pinned version missing from a cached list is not evidence.
+                # An established package is cached for a day, so a release
+                # published inside that window is invisible -- and blocking on
+                # it is a false block on a version that exists. `opower
+                # ==0.21.0` in Home Assistant was exactly this. Same reasoning
+                # as never caching a negative: the answer that blocks has to be
+                # fresh.
+                pin = exact_pin(requirement.specifier, ecosystem)
+                if pin is not None and facts.has_version(pin) is False:
+                    facts = fetch(name, ecosystem)
+                    if cache:
+                        cache.put(facts)
         except RegistryError as exc:
             return Finding(
                 name=name,
@@ -75,7 +88,12 @@ def evaluate(
                 not_inspected = str(exc)
 
         finding = assess(
-            facts, strict=strict, signals=signals, specifier=requirement.specifier
+            facts,
+            strict=strict,
+            signals=signals,
+            # A constraints entry is a bound, not an install, so its pin is not
+            # a claim that such a version exists. The name is still checked.
+            specifier=None if requirement.constraint else requirement.specifier,
         )
         finding.source = requirement.source
         finding.line = requirement.line

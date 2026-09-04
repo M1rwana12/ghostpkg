@@ -93,16 +93,23 @@ _SEGMENT = re.compile(r"(\d+|[a-z]+)")
 
 
 def normalise_version(version: str) -> str:
-    """A PyPI version in the form PyPI itself stores.
+    """A PyPI version reduced to the release it names.
 
-    Deliberately narrow: it folds case, a leading `v`, the `-`/`_` separators
-    and leading zeros in numeric segments, and the pre-release spellings. It is
-    not a full PEP 440 implementation and does not order versions -- it only
-    has to decide whether two spellings name the same release.
+    PEP 440 compares release segments by padding the shorter one with zeros, so
+    `0.8` and `0.8.0` are one version and `1.6.6` and `1.6.6.0` are another.
+    Both spellings sit in unmodified Home Assistant requirements against
+    packages that store the other form, and comparing the raw text blocked
+    them as versions that do not exist.
+
+    Deliberately narrow: it folds case, a leading `v`, the `-`/`_` separators,
+    leading zeros, trailing zero components of the release, and the
+    pre-release spellings. It is not a full PEP 440 implementation and does not
+    order versions -- it only decides whether two spellings name one release.
     """
     text = version.strip().lower().lstrip("v")
     for separator in ("-", "_"):
         text = text.replace(separator, ".")
+
     parts = []
     for segment in text.split("."):
         for token in _SEGMENT.findall(segment) or [segment]:
@@ -110,7 +117,18 @@ def normalise_version(version: str) -> str:
                 parts.append(str(int(token)))
             else:
                 parts.append(_PRE_SPELLINGS.get(token, token))
-    return ".".join(p for p in parts if p)
+    parts = [p for p in parts if p]
+
+    # Trailing zeros are dropped from the release segment only. Everything
+    # from the first non-numeric token onwards is a pre/post/dev marker, where
+    # a zero is meaningful -- `1.0rc0` is not `1.0rc`.
+    release = 0
+    while release < len(parts) and parts[release].isdigit():
+        release += 1
+    head, tail = parts[:release], parts[release:]
+    while len(head) > 1 and head[-1] == "0":
+        head.pop()
+    return ".".join(head + tail)
 
 
 def _get_json(url: str, timeout: int | None = None) -> dict | None:

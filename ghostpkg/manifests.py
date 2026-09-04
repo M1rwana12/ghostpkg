@@ -50,6 +50,14 @@ class Requirement:
     #: README can hold `pip install x` and `npm i y` in adjacent lines, so the
     #: ecosystem cannot always come from the file.
     ecosystem: str | None = None
+    #: From a constraints file, reached by `-c` or named `constraints`. Pip
+    #: never installs from one -- it only bounds a version if the package
+    #: arrives some other way -- so a pin there is a rule, not a request. The
+    #: standard way to forbid a package outright is to pin it to a version that
+    #: cannot exist, and Home Assistant does exactly that for eight of them:
+    #: `pycrypto==1000000000.0.0`. Checking those pins reported a deliberate
+    #: exclusion as a version that does not exist.
+    constraint: bool = False
 
 
 # `name @ https://...` is a direct reference: the source is stated explicitly
@@ -170,6 +178,7 @@ def parse_requirements(
     *,
     base: Path | None = None,
     source: str | None = None,
+    constraint: bool = False,
     _seen: set[Path] | None = None,
     _depth: int = 0,
 ) -> list[Requirement]:
@@ -196,7 +205,11 @@ def parse_requirements(
         if line.startswith("-"):
             include = _include_target(line)
             if include and base is not None and _depth < MAX_INCLUDE_DEPTH:
-                found.extend(_read_include(include, base, seen, _depth))
+                # `-c` names a constraints file; `-r` another requirements one.
+                # The distinction survives the include, because everything a
+                # constraints file lists is a bound rather than an install.
+                nested = constraint or line.lstrip("-").startswith(("c", "-constraint"))
+                found.extend(_read_include(include, base, seen, _depth, nested))
             continue
 
         # A bare URL or local path, not a name we can look up.
@@ -214,6 +227,7 @@ def parse_requirements(
                     specifier=_specifier(line[match.end() :]),
                     line=number,
                     source=source,
+                    constraint=constraint,
                 )
             )
 
@@ -240,7 +254,7 @@ def _include_target(line: str) -> str | None:
 
 
 def _read_include(
-    target: str, base: Path, seen: set[Path], depth: int
+    target: str, base: Path, seen: set[Path], depth: int, constraint: bool = False
 ) -> list[Requirement]:
     if _is_url(target):
         return []
@@ -256,7 +270,12 @@ def _read_include(
     except (OSError, UnicodeDecodeError):
         return []
     return parse_requirements(
-        text, base=path.parent, source=str(path), _seen=seen, _depth=depth + 1
+        text,
+        base=path.parent,
+        source=str(path),
+        constraint=constraint or "constraint" in path.name.lower(),
+        _seen=seen,
+        _depth=depth + 1,
     )
 
 
@@ -759,7 +778,15 @@ def load_manifest(path: Path) -> tuple[list[Requirement], str]:
         return parse_pyproject(read_source(path), source), "pypi"
     if _looks_like_requirements(name):
         text = read_source(path)
-        return parse_requirements(text, base=path.parent, source=source), "pypi"
+        return (
+            parse_requirements(
+                text,
+                base=path.parent,
+                source=source,
+                constraint="constraint" in name,
+            ),
+            "pypi",
+        )
 
     raise UnsupportedManifest(
         f"don't know how to read {path.name!r}. Supported: {SUPPORTED}"

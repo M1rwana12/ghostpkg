@@ -6,6 +6,45 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-09-04
+
+Three more false blocks, all found by a new release gate that scans large real
+repositories instead of synthetic manifests. On `home-assistant/core` alone the
+count went **39 -> 0**.
+
+### Added
+- **`scripts/fieldtest.py`, a release gate.** It clones five repositories chosen
+  for the dependency shapes they contain, scans each, and fails on any block
+  not listed with a reason. Every name in those projects is something thousands
+  of people install daily, so **every block is false until shown otherwise**.
+  Current state: **4,461 packages checked, zero blocks.**
+
+  This exists because 605 unit tests and a 35-check acceptance pass had missed
+  eleven defects that one pass over real repositories found immediately.
+
+### Fixed
+- **A constraints file forbids; it does not install.** `pip` never installs
+  from one -- it only bounds a version if the package arrives some other way --
+  so the standard way to forbid a package outright is to pin it to a version
+  that cannot exist. Home Assistant does this for eight of them
+  (`pycrypto==1000000000.0.0`), and checking those pins turned deliberate
+  exclusions into **35 reported blocks**. The flag now survives nested `-c` and
+  `-r` includes. The name in a constraints file is still checked.
+- **PEP 440 pads the release segment with zeros.** `0.8` and `0.8.0` are one
+  version, as are `1.6.6` and `1.6.6.0`. Both spellings sit in Home Assistant
+  requirements against packages that store the other form, and comparing the
+  raw text blocked `libsoundtouch` and `baidu-aip`. Worse, the test suite had
+  asserted the *opposite* -- that `1.0` and `1.0.0` differ -- so the wrong
+  behaviour was locked in by a test. Corrected, and the padding is now
+  asserted.
+- **A block no longer rests on a cached version list.** An established package
+  is cached for a day, so a release published inside that window is invisible;
+  `opower==0.21.0` exists and was blocked from a stale list. The version list
+  is now re-fetched before any version block, which is the same rule that
+  already governs negative answers: the answer that blocks has to be fresh.
+
+614 tests.
+
 ## [0.20.0] - 2026-09-03
 
 Four defects found by scanning **10,109 packages** across `vercel/next.js`,
@@ -810,7 +849,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.21.0
 [0.20.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.20.0
 [0.19.3]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.19.3
 [0.19.2]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.19.2

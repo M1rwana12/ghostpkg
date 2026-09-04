@@ -86,10 +86,24 @@ class TestVersionsAreComparedAfterNormalisation:
 
     @pytest.mark.parametrize(
         "left, right",
-        [("1.0.0", "1.0.1"), ("1.0.0", "1.0"), ("2.0.0", "20.0.0"), ("1.0a1", "1.0b1")],
+        [("1.0.0", "1.0.1"), ("2.0.0", "20.0.0"), ("1.0a1", "1.0b1"), ("1.0rc0", "1.0rc")],
     )
     def test_different_releases_stay_different(self, left, right):
         assert normalise_version(left) != normalise_version(right)
+
+
+    @pytest.mark.parametrize(
+        "left, right",
+        [("0.8", "0.8.0"), ("1.6.6", "1.6.6.0"), ("1.0", "1.0.0"), ("2.4", "2.4.0")],
+    )
+    def test_trailing_zeros_in_the_release_are_padded(self, left, right):
+        """PEP 440 compares release segments by padding the shorter with zeros.
+        An earlier version of this test asserted the opposite -- that 1.0.0 and
+        1.0 differ -- and that wrong assertion locked in false blocks on
+        libsoundtouch==0.8 and baidu-aip==1.6.6, both straight out of Home
+        Assistant. The field gate caught it; the suite had agreed with the bug.
+        """
+        assert normalise_version(left) == normalise_version(right)
 
     def test_a_pinned_version_is_accepted_in_either_spelling(self):
         facts = PackageFacts(
@@ -182,3 +196,69 @@ class TestAPackageTheCheckoutProvides:
             encoding="utf-8",
         )
         assert main(["scan", str(tmp_path), "--no-cache"]) == 1
+
+
+class TestAConstraintsFileForbidsRatherThanInstalls:
+    """`pip` never installs from a constraints file -- it only bounds a version
+    if the package arrives some other way. So the standard way to forbid a
+    package outright is to pin it to a version that cannot exist, and Home
+    Assistant does exactly that for eight of them:
+    `pycrypto==1000000000.0.0`. Checking those pins turned a deliberate
+    exclusion into 35 reported blocks on one repository."""
+
+    def test_an_impossible_pin_in_a_constraints_file_is_not_a_block(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "ghostpkg.scanner.fetch",
+            lambda name, ecosystem: PackageFacts(
+                name=name, ecosystem=ecosystem, exists=True,
+                age_days=4000, release_count=30, has_repo_url=True,
+                versions=("2.6.1",), latest_version="2.6.1",
+            ),
+        )
+        (tmp_path / "requirements.txt").write_text("-c constraints.txt\n", encoding="utf-8")
+        (tmp_path / "constraints.txt").write_text(
+            "pycrypto==1000000000.0.0\n", encoding="utf-8"
+        )
+        assert main(["scan", str(tmp_path / "requirements.txt"), "--no-cache"]) == 0
+
+    def test_the_same_pin_in_a_requirements_file_still_blocks(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "ghostpkg.scanner.fetch",
+            lambda name, ecosystem: PackageFacts(
+                name=name, ecosystem=ecosystem, exists=True,
+                age_days=4000, release_count=30, has_repo_url=True,
+                versions=("2.6.1",), latest_version="2.6.1",
+            ),
+        )
+        (tmp_path / "requirements.txt").write_text(
+            "pycrypto==1000000000.0.0\n", encoding="utf-8"
+        )
+        assert main(["scan", str(tmp_path / "requirements.txt"), "--no-cache"]) == 1
+
+    def test_the_name_in_a_constraints_file_is_still_checked(self, tmp_path, monkeypatch):
+        """A bound is not an install, but a name that does not exist at all is
+        still worth saying out loud."""
+        monkeypatch.setattr(
+            "ghostpkg.scanner.fetch",
+            lambda name, ecosystem: PackageFacts(name=name, ecosystem=ecosystem, exists=False),
+        )
+        path = tmp_path / "constraints.txt"
+        path.write_text("ghost-991-nope==1.0.0\n", encoding="utf-8")
+        assert main(["scan", str(path), "--no-cache"]) == 1
+
+    def test_the_flag_survives_a_nested_include(self, tmp_path):
+        from ghostpkg.manifests import load_manifest
+
+        (tmp_path / "requirements.txt").write_text("-c a.txt\n", encoding="utf-8")
+        (tmp_path / "a.txt").write_text("-r b.txt\n", encoding="utf-8")
+        (tmp_path / "b.txt").write_text("pycrypto==1000000000.0.0\n", encoding="utf-8")
+        found, _ = load_manifest(tmp_path / "requirements.txt")
+        assert [r.constraint for r in found] == [True]
+
+    def test_an_ordinary_include_is_not_a_constraint(self, tmp_path):
+        from ghostpkg.manifests import load_manifest
+
+        (tmp_path / "requirements.txt").write_text("-r base.txt\n", encoding="utf-8")
+        (tmp_path / "base.txt").write_text("flask==3.0.0\n", encoding="utf-8")
+        found, _ = load_manifest(tmp_path / "requirements.txt")
+        assert [r.constraint for r in found] == [False]
