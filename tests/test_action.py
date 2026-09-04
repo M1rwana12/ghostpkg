@@ -189,3 +189,30 @@ class TestTheHookIsWellFormed:
     )
     def test_unrelated_files_are_not_matched(self, path):
         assert not re.search(hook()["files"], path)
+
+
+class TestTheDocumentedVersionIsTheRealOne:
+    """Every release script replaced the *previous* version string, so a
+    snippet left on an older one was never touched again. `README.md` sat on
+    `@v0.24.0` through two releases, and the GitHub Marketplace renders that
+    snippet -- so the listing told people to pin a version that predates the
+    fixes it advertises."""
+
+    @pytest.mark.parametrize(
+        "path", ["README.md", "README.en.md", ".pre-commit-hooks.yaml"]
+    )
+    def test_every_pinned_version_matches_the_package(self, path):
+        from ghostpkg import __version__
+
+        text = read(ROOT / path)
+        pinned = set(re.findall(r"M1rwana12/ghostpkg@v([0-9.]+)", text))
+        pinned |= set(re.findall(r"rev: v([0-9.]+)", text))
+        assert pinned <= {__version__}, f"{path} pins {pinned}, package is {__version__}"
+
+    def test_at_least_one_snippet_is_pinned(self):
+        """A guard on the guard: if the patterns stop matching, the test above
+        passes for the wrong reason."""
+        from ghostpkg import __version__
+
+        text = read(ROOT / "README.en.md") + read(ROOT / "README.md")
+        assert f"M1rwana12/ghostpkg@v{__version__}" in text

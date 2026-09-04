@@ -194,7 +194,7 @@ ghostpkg scan ../інший-проєкт
 ### У CI
 
 ```yaml
-- uses: M1rwana12/ghostpkg@v0.24.0
+- uses: M1rwana12/ghostpkg@v0.24.3
 ```
 
 Це весь крок. Він шукає маніфести в чекауті, обходить `node_modules` і подібні
@@ -218,7 +218,7 @@ ghostpkg scan ../інший-проєкт
 ```yaml
 repos:
   - repo: https://github.com/M1rwana12/ghostpkg
-    rev: v0.24.0
+    rev: v0.24.3
     hooks:
       - id: ghostpkg
 ```

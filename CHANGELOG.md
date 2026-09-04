@@ -6,6 +6,21 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.24.3] - 2026-09-04
+
+### Fixed
+- **The documented snippets pinned `@v0.24.0`, two releases behind.** Each
+  release script replaced the *previous* version string, so a snippet already
+  left on an older one was never touched again. The GitHub Marketplace listing
+  renders that snippet, so it told people to pin a version predating the fixes
+  it advertises.
+
+  Replacement is now by pattern rather than by exact previous string, and a
+  test fails if any documented pin disagrees with `__version__` -- with a
+  second test guarding against the patterns silently matching nothing.
+
+711 tests.
+
 ## [0.24.2] - 2026-09-04
 
 ### Changed
@@ -1015,7 +1030,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.24.2...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.24.3...HEAD
+[0.24.3]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.24.3
 [0.24.2]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.24.2
 [0.24.1]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.24.1
 [0.24.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.24.0

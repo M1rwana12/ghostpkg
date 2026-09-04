@@ -397,7 +397,7 @@ length, and only applies to packages young enough to plausibly be a squat.
 ### In CI
 
 ```yaml
-- uses: M1rwana12/ghostpkg@v0.24.0
+- uses: M1rwana12/ghostpkg@v0.24.3
 ```
 
 That is the whole step. It searches the checkout, skips `node_modules` and
@@ -428,7 +428,7 @@ Or without the action, if you prefer:
 ```yaml
 repos:
   - repo: https://github.com/M1rwana12/ghostpkg
-    rev: v0.24.0
+    rev: v0.24.3
     hooks:
       - id: ghostpkg
 ```
