@@ -230,9 +230,13 @@ Lookups are cached on disk, so re-scanning a 150-package manifest takes 0.4s
 instead of 4.7s.
 
 Time-to-live depends on the answer, and the negative case is the one that
-matters: **"does not exist" is held for only an hour**, because a free name can
-be registered at any moment and that is the entire attack. Young packages are
-held six hours, established ones a day.
+matters: **"does not exist" is never cached at all.** That answer is the only
+one that blocks, so it has to be fresh in both directions -- a free name can be
+registered at any moment, which is the entire attack, and a name published a
+moment ago can 404 briefly because PyPI's feed announces it before the JSON API
+serves it. Caching that for an hour produced a real false block on a live
+package. Young packages are held six hours, established ones a day, and a
+pinned version is re-checked against a fresh list before it is ever blocked.
 
 ```bash
 ghostpkg scan requirements.txt --no-cache   # bypass it

@@ -43,8 +43,9 @@ new blocking signal, bring evidence that it does not fire on legitimate packages
 - **The open problem:** detecting a hallucinated name that an attacker has
   *already registered*. The existence check cannot see it. If you have an idea
   that does not collapse into "block everything new", open an issue.
-- npm coverage. The popular-name list used for typo distance is PyPI-derived, so
-  npm typosquat detection is weaker than it should be.
+- Wider popular-name lists. There are 2,000 names per ecosystem now and each
+  name is compared against its own registry's list, so `recat`, `lodahs` and
+  `webpakc` are caught -- but a squat on anything outside the top 2,000 is not.
 - More ecosystems: crates.io, RubyGems, Go modules.
 
 ## Please don't

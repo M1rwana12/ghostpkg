@@ -6,6 +6,28 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.24.1] - 2026-09-04
+
+### Documentation
+Three claims that outlived the behaviour they described, found by re-reading
+both READMEs against a live run before publishing the Action.
+
+- **The cache paragraph still said "does not exist is held for only an hour"**
+  in both languages, and contradicted itself three hundred lines later with
+  "negatives are never cached". The second is true. The first described the
+  precise failure this tool exists to avoid, and an earlier patch had missed
+  the wording. It now also explains why the rule runs in both directions: a
+  free name can be registered at any moment, and a name published a moment ago
+  404s briefly because PyPI's feed announces it before the JSON API serves it.
+- `CONTRIBUTING.md` still described the popular-name list as PyPI-derived and
+  npm typo detection as weak because of it. There have been 2,000 names per
+  ecosystem for some time.
+- The usage comment in `.pre-commit-hooks.yaml` pinned `v0.19.0`.
+
+Verified live rather than by reading: every flag in `--help` appears in both
+options tables, the documented exit codes match, `--format github` emits the
+annotation exactly as shown, and the `--json` envelope matches its example.
+
 ## [0.24.0] - 2026-09-04
 
 The gate now runs in CI, and it scanned **88,904 packages across sixteen
@@ -983,7 +1005,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.24.0...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.24.1...HEAD
+[0.24.1]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.24.1
 [0.24.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.24.0
 [0.23.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.23.0
 [0.22.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.22.0
