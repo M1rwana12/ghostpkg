@@ -29,14 +29,28 @@ import tempfile
 import time
 from pathlib import Path
 
-#: Chosen for the shapes they contain, not for popularity: a pnpm monorepo with
-#: hundreds of workspace members, a Python project with pinned calendar
-#: versions, and a repository that mixes both ecosystems in one tree.
+#: Chosen for the shapes they contain, not for popularity. Every one of these
+#: found a defect nothing else did, and the note says which -- so a future
+#: reader can tell why the list is what it is rather than trimming it.
+#:
+#: The boolean is whether `--quick` includes it.
 REPOS = [
-    ("pallets/flask", "uv.lock and example sub-projects", True),
+    ("pallets/flask", "uv.lock, example sub-projects", True),
     ("vuejs/core", "pnpm workspace, lockfile v9", True),
+    ("expressjs/express", "small and plain npm; a fast canary", True),
+
     ("getsentry/sentry", "pnpm-lock and uv.lock in one tree", False),
-    ("home-assistant/core", "calendar versions with leading zeros", False),
+    ("home-assistant/core", "constraints pinned to 1000000000.0.0; calendar versions", False),
+    ("vercel/turborepo", "pnpm v5 keys with peer suffixes -- 17 false blocks", False),
+    ("sveltejs/kit", "pnpm `name@file:` workspace fixtures -- 5 false blocks", False),
+    ("withastro/astro", "more `name@file:` fixtures, scoped -- 3 false blocks", False),
+    ("storybookjs/storybook", "yarn berry `npm:v1.1.0` ranges -- 2 false blocks", False),
+    ("apache/airflow", "127 checksum files, five named like constraints", False),
+    ("ray-project/ray", "PEP 440 local versions, materialised symlinks", False),
+    ("nrwl/nx", "pnpm monorepo, agent instruction files", False),
+    ("angular/angular", "15,000 names, the widest single scan", False),
+    ("jupyterlab/jupyterlab", "Python and npm in one tree", False),
+    ("apache/superset", "6,000 names, heavy extras", False),
     ("vercel/next.js", "491 package.json files, internal deps by exact pin", False),
 ]
 

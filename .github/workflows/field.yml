@@ -1,0 +1,71 @@
+# Scanning real repositories, on a schedule rather than on every push.
+#
+# This gate has found a defect the unit tests missed on three consecutive runs,
+# including two that reported a package as non-existent while `pip` installed it
+# without complaint. It is the most productive check the project has, and it is
+# the one nobody would remember to run by hand.
+#
+# It is not on every push because a full pass is roughly 40,000 registry
+# lookups. That is rude to PyPI and npm, and the answers barely move day to day.
+# The push job runs the three smallest repositories, which is about 700 names
+# and mostly served from cache.
+#
+# Runs on Linux specifically: `vercel/next.js` cannot be cloned on Windows,
+# where a path in its test fixtures exceeds the limit, so the largest monorepo
+# in the set is only reachable here.
+
+name: field
+
+on:
+  schedule:
+    # 04:20 UTC, off the hour to avoid the stampede every cron service creates.
+    - cron: "20 4 * * *"
+  workflow_dispatch:
+    inputs:
+      quick:
+        description: Only the three smallest repositories
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths:
+      # Only when something that could change a verdict has changed.
+      - "ghostpkg/**"
+      - "scripts/fieldtest.py"
+      - ".github/workflows/field.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - run: pip install -e .
+
+      - name: Scan real repositories
+        run: |
+          # A push gets the quick set; a schedule or a manual run gets all of
+          # them, unless the manual run asked for quick.
+          if [ "${{ github.event_name }}" = "push" ] || [ "${{ inputs.quick }}" = "true" ]; then
+            python scripts/fieldtest.py --quick
+          else
+            python scripts/fieldtest.py
+          fi
+
+      - name: What a failure here means
+        if: failure()
+        run: |
+          echo "::error::A block was reported on a repository whose dependencies"
+          echo "::error::real people install every day. Treat it as a false"
+          echo "::error::positive until proven otherwise: find where the name"
+          echo "::error::came from, fix the parser, and re-run. If the block is"
+          echo "::error::genuinely correct, add it to EXPECTED in"
+          echo "::error::scripts/fieldtest.py with a reason a reader can check."
