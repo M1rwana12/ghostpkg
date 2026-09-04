@@ -2,7 +2,7 @@
 #
 #   repos:
 #     - repo: https://github.com/M1rwana12/ghostpkg
-#       rev: v0.24.3
+#       rev: v0.24.4
 #       hooks:
 #         - id: ghostpkg
 #

@@ -6,6 +6,22 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.24.4] - 2026-09-04
+
+### Changed
+- **Releases are published by CI through PyPI Trusted Publishing.** The
+  publisher is registered, so `publish.yml` now runs when a release is
+  published rather than only when started by hand. PyPI mints a short-lived
+  credential for this exact workflow in this exact repository, so there is no
+  long-lived token to leak.
+
+  This is the first release built and uploaded that way rather than from a
+  laptop with a token pasted into the shell. For a tool whose whole subject is
+  supply-chain trust, that was the wrong example to set.
+
+  A manual run is still available, for a tag released before this was wired up
+  or to retry one that failed after the release already existed.
+
 ## [0.24.3] - 2026-09-04
 
 ### Fixed
@@ -1030,7 +1046,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.24.3...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.24.4...HEAD
+[0.24.4]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.24.4
 [0.24.3]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.24.3
 [0.24.2]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.24.2
 [0.24.1]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.24.1

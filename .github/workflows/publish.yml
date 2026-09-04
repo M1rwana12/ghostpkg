@@ -6,26 +6,24 @@
 # whole subject is supply-chain trust, publishing from a laptop with a token
 # pasted into the shell is the wrong example to set.
 #
-# ONE-TIME SETUP, on pypi.org -> ghostpkg -> Manage -> Publishing:
-#   Owner:              M1rwana12
-#   Repository name:    ghostpkg
-#   Workflow name:      publish.yml
-#   Environment name:   pypi
-# Until that exists, this workflow will fail -- which is why it only runs when
-# started by hand. Once a run has succeeded, add:
+# The publisher is registered on PyPI, so this now runs on its own when a
+# release is published:
 #
-#   release:
-#     types: [published]
+#   Owner: M1rwana12   Repository: ghostpkg
+#   Workflow: publish.yml   Environment: pypi
 #
-# to the triggers below so tagging a release is enough.
+# A manual run is still available for a tag that was released before this was
+# wired up, or to retry one that failed after the release already existed.
 
 name: publish
 
 on:
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       tag:
-        description: Tag to build and publish, e.g. v0.18.0
+        description: Tag to build and publish, e.g. v0.24.4
         required: true
 
 permissions:
@@ -37,7 +35,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag }}
+          # A release event carries its own tag; a manual run names one.
+          ref: ${{ inputs.tag || github.event.release.tag_name }}
 
       - uses: actions/setup-python@v5
         with:
@@ -50,10 +49,12 @@ jobs:
           python -m twine check dist/*
 
       - name: Check the tag matches the version in the package
+        env:
+          TAG: ${{ inputs.tag || github.event.release.tag_name }}
         run: |
           version=$(python -c "import ghostpkg; print(ghostpkg.__version__)")
-          if [ "v$version" != "${{ inputs.tag }}" ]; then
-            echo "::error::tag ${{ inputs.tag }} does not match __version__ $version"
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::tag $TAG does not match __version__ $version"
             exit 1
           fi
 
