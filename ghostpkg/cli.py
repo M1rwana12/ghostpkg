@@ -15,7 +15,13 @@ from . import __version__, registries
 from .assess import Finding
 from .cache import Cache
 from .discover import discover
-from .manifests import UnsupportedManifest, load_manifest, parse_requirements
+from .manifests import (
+    UnsupportedManifest,
+    declared_name,
+    load_manifest,
+    parse_npm_names,
+    parse_requirements,
+)
 from .policy import PolicyError, apply as apply_policy, load as load_policy
 from .report import Palette, as_github, as_json, render, summarise, use_colour
 from .scanner import DEFAULT_WORKERS, evaluate
@@ -134,6 +140,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"ghostpkg: no manifests found in {where}", file=sys.stderr)
             return EXIT_NOTHING_SCANNED
 
+        # Names the checkout provides itself. A monorepo depends on its own
+            # packages, and not always through `workspace:*` -- an exact pin is
+            # just as common, and looking those up on the public registry
+            # blocked every one of them.
+        local: set[str] = set()
+        for path in paths:
+            own = declared_name(path)
+            if own:
+                local.add(own.lower())
+
         for path in paths:
             try:
                 found, ecosystem = load_manifest(path)
@@ -151,6 +167,8 @@ def main(argv: list[str] | None = None) -> int:
                     return EXIT_ERROR
                 continue
             for requirement in found:
+                if requirement.name.lower() in local:
+                    continue  # provided by this checkout
                 by_ecosystem.setdefault(
                     requirement.ecosystem or ecosystem, []
                 ).append(requirement)
@@ -162,7 +180,15 @@ def main(argv: list[str] | None = None) -> int:
             return EXIT_NOTHING_SCANNED
     else:
         # Accept a pin on the command line too: `ghostpkg check requests==2.31.0`.
-        by_ecosystem[args.ecosystem] = parse_requirements("\n".join(args.names))
+        # npm names go through their own reader, because a scoped name is not
+        # expressible in PEP 508 and the requirements parser dropped every one.
+        if args.ecosystem == "npm":
+            by_ecosystem[args.ecosystem] = parse_npm_names(args.names)
+        else:
+            by_ecosystem[args.ecosystem] = parse_requirements("\n".join(args.names))
+        if not by_ecosystem[args.ecosystem]:
+            print(f"ghostpkg: no package names in {' '.join(args.names)}", file=sys.stderr)
+            return EXIT_NOTHING_SCANNED
 
     try:
         policy, policy_path = load_policy(args.config)

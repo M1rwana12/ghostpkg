@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -68,10 +69,48 @@ class PackageFacts:
         return dict(self.yanked).get(version)
 
     def has_version(self, version: str) -> bool | None:
-        """True/False if we know the version list, None if we do not."""
+        """True/False if we know the version list, None if we do not.
+
+        Compared after normalisation, not as text. PyPI stores the canonical
+        form, so a requirement pinned `==2025.08.1` was reported as a version
+        that does not exist while `pip download` installed it happily -- a
+        false block on an ordinary dependency, and one that breaks a build.
+        """
         if not self.versions:
             return None
-        return version in self.versions
+        if version in self.versions:
+            return True
+        if self.ecosystem != "pypi":
+            return False
+        wanted = normalise_version(version)
+        return any(normalise_version(known) == wanted for known in self.versions)
+
+
+#: The spellings PEP 440 folds together. `2025.08.1` is `2025.8.1`, `1.0-RC1`
+#: is `1.0rc1`, and a leading `v` is not part of the version at all.
+_PRE_SPELLINGS = {"alpha": "a", "beta": "b", "c": "rc", "pre": "rc", "preview": "rc"}
+_SEGMENT = re.compile(r"(\d+|[a-z]+)")
+
+
+def normalise_version(version: str) -> str:
+    """A PyPI version in the form PyPI itself stores.
+
+    Deliberately narrow: it folds case, a leading `v`, the `-`/`_` separators
+    and leading zeros in numeric segments, and the pre-release spellings. It is
+    not a full PEP 440 implementation and does not order versions -- it only
+    has to decide whether two spellings name the same release.
+    """
+    text = version.strip().lower().lstrip("v")
+    for separator in ("-", "_"):
+        text = text.replace(separator, ".")
+    parts = []
+    for segment in text.split("."):
+        for token in _SEGMENT.findall(segment) or [segment]:
+            if token.isdigit():
+                parts.append(str(int(token)))
+            else:
+                parts.append(_PRE_SPELLINGS.get(token, token))
+    return ".".join(p for p in parts if p)
 
 
 def _get_json(url: str, timeout: int | None = None) -> dict | None:

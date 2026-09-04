@@ -260,6 +260,37 @@ def _read_include(
     )
 
 
+#: An npm name may be scoped, and a pin is written `name@version` -- which is
+#: also how the scope's own `@` looks, so the split is at the *last* `@` that
+#: is not at position zero.
+def parse_npm_names(names: "list[str]", source: str | None = None) -> list[Requirement]:
+    """Names typed on the command line, read as npm rather than as PEP 508.
+
+    The requirements parser cannot represent `@scope/name`: its pattern demands
+    an alphanumeric first character, so every scoped name was dropped in
+    silence and the run reported that all zero packages looked fine.
+    """
+    found: list[Requirement] = []
+    for raw in names:
+        text = raw.strip()
+        if not text:
+            continue
+        at = text.rfind("@")
+        if at > 0:
+            name, specifier = text[:at], text[at + 1 :].strip() or None
+        else:
+            name, specifier = text, None
+        name = name.strip()
+        # A scoped name is always `@scope/name`. A bare `@`, or a scope with
+        # nothing after it, is not a package -- and asking the registry about
+        # one returns HTTP 405, which the run then reports as "could not be
+        # checked" rather than as the nonsense input it is.
+        if not name or (name.startswith("@") and "/" not in name):
+            continue
+        found.append(Requirement(name=name, specifier=specifier, source=source))
+    return found
+
+
 def parse_package_json(text: str, source: str | None = None) -> list[Requirement]:
     data = json.loads(strip_bom(text))
     if not isinstance(data, dict):
@@ -637,13 +668,63 @@ def parse_pyproject(text: str, source: str | None = None) -> list[Requirement]:
     ]
 
 
+#: `.in` is the pip-tools convention for a requirements source, but it is also
+#: the extension of `MANIFEST.in`, which is packaging directives. Reading one
+#: as requirements reported `graft` as a package that exists -- there is a real
+#: project of that name -- and blocked `recursive-exclude`.
+NOT_REQUIREMENTS = ("manifest.in",)
+
+
 def _looks_like_requirements(name: str) -> bool:
+    if name in NOT_REQUIREMENTS:
+        return False
     stem = name.rsplit(".", 1)[0]
     if name.endswith(".in"):
-        return True
+        return any(word in stem for word in REQUIREMENTS_NAMES) or stem in ("reqs", "deps")
     if not name.endswith(".txt"):
         return False
     return any(word in stem for word in REQUIREMENTS_NAMES)
+
+
+def declared_name(path: Path) -> "str | None":
+    """The name a manifest gives to the package it describes, if any.
+
+    A monorepo depends on its own packages, and not always through
+    `workspace:*` -- pinning an exact version is just as common. Those names
+    are provided by the checkout being scanned, so the registry has no say
+    about them, exactly as for a `workspace:` or `file:` specifier.
+
+    Measured on `vercel/next.js`: all three names blocked in a 6,335-package
+    scan were the repository's own packages, `@next/font` among them.
+    """
+    name = path.name.lower()
+    try:
+        if name == "package.json":
+            data = json.loads(strip_bom(read_source(path)))
+            value = data.get("name") if isinstance(data, dict) else None
+            return str(value) if value else None
+        if name == "pyproject.toml":
+            text = strip_bom(read_source(path))
+            try:
+                import tomllib  # noqa: PLC0415
+
+                data = tomllib.loads(text)
+                for table in (data.get("project"), (data.get("tool") or {}).get("poetry")):
+                    if isinstance(table, dict) and table.get("name"):
+                        return str(table["name"])
+                return None
+            except ImportError:
+                for table in ("project", "tool.poetry"):
+                    for key in _toml_table_keys(text, table):
+                        if key == "name":
+                            for line in text.splitlines():
+                                stripped = line.split("#", 1)[0].strip()
+                                if stripped.startswith("name") and "=" in stripped:
+                                    return stripped.split("=", 1)[1].strip().strip("\"'")
+                return None
+    except (OSError, ValueError, UnicodeDecodeError):
+        return None
+    return None
 
 
 def load_manifest(path: Path) -> tuple[list[Requirement], str]:

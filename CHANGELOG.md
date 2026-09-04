@@ -6,6 +6,46 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-09-03
+
+Four defects found by scanning **10,109 packages** across `vercel/next.js`,
+`home-assistant/core` and `getsentry/sentry`. Those three repositories produced
+53 blocks and **every one of them was false**. None of these shapes occur in a
+small synthetic manifest, which is why 571 tests and a 35-check acceptance pass
+had missed all four.
+
+### Fixed
+- **`ghostpkg check -e npm "@scope/name"` reported success having checked
+  nothing.** The names went through the PEP 508 requirements parser, whose
+  pattern demands an alphanumeric first character, so every scoped npm name was
+  dropped in silence -- the run printed "all 0 packages look fine" and exited
+  0. On the command this tool is named for, and for a quarter of the npm
+  namespace. A false all-clear is worse than any false positive, and this is
+  the most serious defect the project has shipped.
+- **A pinned version was compared as text rather than as a version.**
+  `aiopurpleair==2025.08.1` was blocked as non-existent while `pip download`
+  installed it happily: PyPI stores the canonical `2025.8.1`. Comparison now
+  normalises both sides -- leading zeros, a leading `v`, `-`/`_` separators and
+  the pre-release spellings. Three such pins sit in unmodified Home Assistant
+  requirements, and a false block breaks a build.
+- **A package the checkout provides itself is no longer looked up.** All three
+  names blocked in a 6,335-package scan of `vercel/next.js` were the
+  repository's own packages, `@next/font` among them. A monorepo depends on
+  itself, and not always through `workspace:*` -- an exact pin is just as
+  common. Names declared by any `package.json` or `pyproject.toml` in the scan
+  are now excluded, which is the same rule as `workspace:` stated differently.
+- **`MANIFEST.in` is no longer read as a requirements file.** `.in` is the
+  pip-tools convention and also the extension of a packaging directives file.
+  Read as requirements it reported `graft` as a package that exists -- there is
+  a real project of that name -- and blocked `recursive-exclude`.
+
+### Documentation
+- The `--json` example showed the bare array from before 0.14.0. It is a
+  `{schema, tool, summary, findings}` envelope, and the documented example now
+  matches, including `source` and `line`.
+
+605 tests.
+
 ## [0.19.3] - 2026-09-03
 
 Found by reviewing the published 0.19.2 rather than the working tree. Two of
@@ -770,7 +810,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.19.3...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.20.0
 [0.19.3]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.19.3
 [0.19.2]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.19.2
 [0.19.1]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.19.1

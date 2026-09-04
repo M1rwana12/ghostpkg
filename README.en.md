@@ -292,18 +292,31 @@ malformed file **stops the run** rather than quietly leaving you unprotected.
 ### JSON output
 
 ```console
-$ ghostpkg check somepkgthatisnotreal9911 --json
-[
-  {
-    "name": "somepkgthatisnotreal9911",
-    "ecosystem": "pypi",
-    "verdict": "BLOCK",
-    "reasons": [
-      "does not exist on pypi"
-    ]
-  }
-]
+$ ghostpkg scan requirements.txt --json
+{
+  "schema": 1,
+  "tool": { "name": "ghostpkg", "version": "0.20.0" },
+  "summary": { "checked": 2, "blocked": 1, "warned": 0, "errored": 0 },
+  "findings": [
+    {
+      "name": "somepkgthatisnotreal9911",
+      "ecosystem": "pypi",
+      "verdict": "BLOCK",
+      "source": "requirements.txt",
+      "line": 2,
+      "exists": false,
+      "latest_version": null,
+      "reasons": [
+        { "rule": "GP001", "text": "does not exist on pypi" }
+      ]
+    }
+  ]
+}
 ```
+
+`schema` is there so a consumer can tell what it is reading; `source` and
+`line` say where the name was written. `--format github` emits workflow
+commands instead, and `--format text` is the default.
 
 ---
 
