@@ -46,7 +46,13 @@ FLAGS_WITH_VALUES = {
 }
 
 PROSE_SUFFIXES = (".md", ".mdx", ".markdown", ".mdc", ".rst", ".txt")
-PROSE_NAMES = ("agents.md", "claude.md", "readme", ".cursorrules", "contributing.md")
+#: Kept in step with `discover.AGENT_FILES` -- a file the search offers up
+#: and the parser then refuses is dropped in silence, which is how
+#: `.windsurfrules` was found and never scanned.
+PROSE_NAMES = (
+    "agents.md", "claude.md", "readme", "contributing.md",
+    ".cursorrules", ".windsurfrules",
+)
 
 # A shell prompt, a markdown bullet or a blockquote in front of the command.
 LEAD = re.compile(r"^[\s>*\-+]*(?:\$|#|»|❯|PS[^>]*>)?\s*")

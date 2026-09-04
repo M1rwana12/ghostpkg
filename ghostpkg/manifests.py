@@ -93,7 +93,8 @@ REQUIREMENTS_NAMES = ("requirements", "constraints", "dev-requirements", "test-r
 SUPPORTED = (
     "requirements*.txt, *.in, pyproject.toml, package.json, "
     "package-lock.json, yarn.lock, pnpm-lock.yaml, poetry.lock, uv.lock, "
-    "and prose files: README, AGENTS.md, *.md, .cursorrules"
+    "and prose files: README, AGENTS.md, CLAUDE.md, *.md, "
+    ".cursorrules, .windsurfrules"
 )
 
 MAX_INCLUDE_DEPTH = 10

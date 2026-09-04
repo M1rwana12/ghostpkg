@@ -6,6 +6,43 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.19.3] - 2026-09-03
+
+Found by reviewing the published 0.19.2 rather than the working tree. Two of
+the four are false blocks, which this project treats as its worst failure, and
+both have the same cause: `jslocks.py` was written after the test file that
+exists to defend the rule "a dependency naming its own source is not the
+registry's business", so `yarn.lock` and `pnpm-lock.yaml` were never covered by
+it.
+
+### Fixed
+- **A yarn `owner/repo#ref` dependency was blocked.** GitHub shorthand was
+  handled for `package.json` and missed in `yarn.lock`, so
+  `internal-lib@acme/internal-lib#v1.2.3` was looked up on npmjs, found absent,
+  and reported as a package that does not exist.
+- **A pnpm git or URL dependency produced a nonsense package name.** The
+  protocol is only a prefix in lockfile v5; from v6 it follows `name@`, so the
+  guard never fired. `github.com/acme/forked/abc123` was read as a package
+  called `github.com/acme/forked`, and
+  `foo@https://codeload.github.com/...` as one called
+  `foo@https://codeload.github.com/acme/foo`. Both were then blocked.
+- **`--timeout` did nothing.** `def _get_json(url, timeout=TIMEOUT)` bound the
+  module global once, at import; the CLI assigned `registries.TIMEOUT` and
+  nothing ever re-read it, so every request used 15 seconds regardless.
+- **`.windsurfrules` was found and never scanned.** The directory search
+  offered it up, the parser refused it, and the CLI ignores an unreadable
+  *discovered* file on purpose -- so nothing was printed. There is now a test
+  asserting that every file the search returns can actually be parsed.
+
+### Added
+- End-to-end tests for suppression. The ignore file was loaded and applied in
+  `main()` only, and nothing asserted its effect on a verdict or an exit code:
+  the entire policy call could be replaced with `used = []` and all 539 tests
+  still passed. Three tests now cover the real path, and they fail against that
+  stub.
+
+571 tests.
+
 ## [0.19.2] - 2026-09-02
 
 Found by throwing hostile input at the parsers rather than by reading them.
@@ -733,7 +770,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.19.2...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.19.3...HEAD
+[0.19.3]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.19.3
 [0.19.2]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.19.2
 [0.19.1]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.19.1
 [0.19.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.19.0

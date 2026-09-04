@@ -74,7 +74,7 @@ class PackageFacts:
         return version in self.versions
 
 
-def _get_json(url: str, timeout: int = TIMEOUT) -> dict | None:
+def _get_json(url: str, timeout: int | None = None) -> dict | None:
     """Fetch and decode JSON. Returns None on a clean 404.
 
     Everything that is not a clean 404 becomes a RegistryError. That matters
@@ -84,6 +84,9 @@ def _get_json(url: str, timeout: int = TIMEOUT) -> dict | None:
     and exit 1 -- the code that means "a package does not exist". The most
     ordinary network flakiness read as a confirmed detection.
     """
+    # Read at call time, not at import. Binding the module global as a
+    # default froze it at 15 seconds, so `--timeout` never took effect.
+    timeout = TIMEOUT if timeout is None else timeout
     request = urllib.request.Request(
         url, headers={"User-Agent": USER_AGENT, "Accept-Encoding": "gzip"}
     )

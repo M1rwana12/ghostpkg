@@ -24,7 +24,12 @@ from __future__ import annotations
 
 import re
 
-from .manifests import Requirement, npm_alias_target, strip_bom
+from .manifests import (
+    GITHUB_SHORTHAND,
+    Requirement,
+    npm_alias_target,
+    strip_bom,
+)
 
 #: A yarn descriptor protocol that resolves somewhere other than the registry.
 #: `exec:` and `patch:` are berry-only; the rest appear in both versions.
@@ -42,6 +47,22 @@ PNPM_LOCAL = ("file:", "link:", "http://", "https://", "git+", "git:")
 #: second `@`, not the first. Peer suffixes -- `(react@18.2.0)` in v9,
 #: `_react@18.2.0` in v5 -- come after it and must not be split on.
 PNPM_VERSION_AT = re.compile(r"(?<=.)@(?=\d)")
+
+
+def _is_host_path(key: str) -> bool:
+    """`github.com/acme/forked/abc123` -- a v5 git dependency, keyed by host.
+
+    The slash is what gives it away. An unscoped npm name never contains one,
+    and a scoped name starts with `@`, so a key with a slash and no leading `@`
+    is a URL path rather than a package.
+
+    The dot alone is not enough, and testing it alone was wrong: dots are legal
+    and common in real names. Requiring only a dot threw away `big.js`,
+    `array.prototype.concat` and 289 of Svelte's 435 packages.
+    """
+    if key.startswith("@") or "/" not in key:
+        return False
+    return "." in key.split("/", 1)[0]
 
 
 def _yarn_descriptor(text: str) -> "tuple[str, str] | None":
@@ -83,8 +104,12 @@ def parse_yarn_lock(text: str, source: str | None = None) -> list[Requirement]:
             if parsed is None:
                 continue
             name, spec = parsed
-            if spec.startswith(YARN_LOCAL):
-                continue  # a protocol, so not a registry name
+            if spec.startswith(YARN_LOCAL) or GITHUB_SHORTHAND.match(spec):
+                # A protocol, or `owner/repo#ref` shorthand. Both name their
+                # own source. The shorthand was handled for package.json and
+                # missed here, so a private repository dependency was looked
+                # up on npmjs and blocked.
+                continue
             if spec.startswith("npm:"):
                 alias = npm_alias_target(spec)
                 if alias is not None:
@@ -134,11 +159,17 @@ def parse_pnpm_lock(text: str, source: str | None = None) -> list[Requirement]:
             continue
 
         key = stripped[:-1].strip().strip('"').strip("'")
-        if not key or key.startswith(PNPM_LOCAL):
+        if not key:
             continue
         key = key.split("(", 1)[0]  # v9 peer resolutions
         if key.startswith("/"):
             key = key[1:]
+        # The protocol is only a prefix in v5. From v6 it follows `name@`, so
+        # testing the start of the key never fired and the parser fell through
+        # to its slash split -- emitting names like `github.com/acme/forked`,
+        # which were then looked up on npmjs and blocked.
+        if key.startswith(PNPM_LOCAL) or "://" in key or _is_host_path(key):
+            continue
 
         match = PNPM_VERSION_AT.search(key)
         if match:

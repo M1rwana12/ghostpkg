@@ -186,3 +186,60 @@ class TestExpiry:
 
     def test_no_expiry_means_permanent(self):
         assert apply(missing(), rules({"package": "*", "reason": "x"}))[0].verdict is Verdict.OK
+
+
+class TestSuppressionEndToEnd:
+    """The ignore file is loaded and applied in `main()` only, and nothing
+    asserted its effect on a verdict or an exit code. The whole policy call
+    could be replaced with `used = []` and all 539 tests still passed -- which
+    is how a stubbed-out suppression layer sat in a working tree unnoticed.
+    """
+
+    def ignore_file(self, tmp_path, package, rule="GP001"):
+        path = tmp_path / "ignore.json"
+        path.write_text(
+            json.dumps({"ignore": [{
+                "package": package, "rule": rule,
+                "reason": "documented example, checked by hand",
+            }]}),
+            encoding="utf-8",
+        )
+        return path
+
+    def manifest(self, tmp_path):
+        path = tmp_path / "requirements.txt"
+        path.write_text("ghost-pkg-991-does-not-exist\n", encoding="utf-8")
+        return path
+
+    def test_without_the_file_the_scan_blocks(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "ghostpkg.scanner.fetch",
+            lambda name, ecosystem: PackageFacts(name=name, ecosystem=ecosystem, exists=False),
+        )
+        assert main(["scan", str(self.manifest(tmp_path)), "--no-cache"]) == 1
+
+    def test_with_the_file_the_verdict_is_downgraded(self, tmp_path, monkeypatch, capsys):
+        """Exit 0, and the run says what was suppressed and by which file --
+        a silent clean result would be indistinguishable from no protection."""
+        monkeypatch.setattr(
+            "ghostpkg.scanner.fetch",
+            lambda name, ecosystem: PackageFacts(name=name, ecosystem=ecosystem, exists=False),
+        )
+        config = self.ignore_file(tmp_path, "ghost-pkg-991-does-not-exist")
+        code = main([
+            "scan", str(self.manifest(tmp_path)), "--no-cache", "--config", str(config),
+        ])
+        out = capsys.readouterr().out
+        assert code == 0
+        assert "suppressed" in out
+        assert "ignore.json" in out
+
+    def test_a_rule_that_does_not_match_suppresses_nothing(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "ghostpkg.scanner.fetch",
+            lambda name, ecosystem: PackageFacts(name=name, ecosystem=ecosystem, exists=False),
+        )
+        config = self.ignore_file(tmp_path, "some-other-package")
+        assert main([
+            "scan", str(self.manifest(tmp_path)), "--no-cache", "--config", str(config),
+        ]) == 1
