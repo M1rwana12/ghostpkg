@@ -13,6 +13,7 @@ from pathlib import Path
 
 from . import __version__, registries
 from .assess import Finding
+from . import inspection
 from .cache import Cache
 from .discover import discover
 from .manifests import (
@@ -120,8 +121,17 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ghostpkg: {'removed ' + str(cache.path) if removed else 'nothing to remove'}")
         return EXIT_OK
 
-    if args.timeout:
+    if args.timeout is not None:
+        # `if args.timeout:` made `--timeout 0` a silent no-op. Nought is not a
+        # sensible budget either, so it is refused rather than ignored.
+        if args.timeout <= 0:
+            print("ghostpkg: --timeout must be a positive number of seconds", file=sys.stderr)
+            return EXIT_ERROR
         registries.TIMEOUT = args.timeout
+        # `--deep` downloads an archive through its own client, which had a
+        # fixed budget of its own -- so the documented per-request timeout
+        # applied to every request except the slowest kind.
+        inspection.TIMEOUT = max(args.timeout, inspection.TIMEOUT)
 
     # Group by ecosystem so several manifests are looked up together and a
     # dependency repeated across them costs one request, not one per file.

@@ -55,9 +55,50 @@ class TestPnpmLock:
         text = "packages:\n  /react/18.2.0:\n    resolution: {}\n  /@babel/code-frame/7.12.11:\n    resolution: {}\n"
         assert names(parse_pnpm_lock(text)) == ["react", "@babel/code-frame"]
 
-    def test_v5_peer_suffix_after_underscore(self):
-        text = "packages:\n  /react-dom@18.2.0_react@18.2.0:\n    resolution: {}\n"
-        assert names(parse_pnpm_lock(text)) == ["react-dom"]
+    @pytest.mark.parametrize(
+        "key, expected",
+        [
+            ("/react-dom/18.2.0_react@18.2.0", "react-dom"),
+            ("/eslint-plugin-react/7.31.7_eslint@7.32.0", "eslint-plugin-react"),
+            ("/tsutils/3.21.0_typescript@4.8.3", "tsutils"),
+            ("/acorn-jsx/5.3.2_acorn@7.4.1", "acorn-jsx"),
+            ("/@babel/helper-compilation-targets/7.19.1_@babel+core@7.19.1",
+             "@babel/helper-compilation-targets"),
+            ("/@typescript-eslint/typescript-estree/5.37.0_typescript@4.8.3",
+             "@typescript-eslint/typescript-estree"),
+            ("/@pnpm/lockfile-file/5.3.3_@pnpm+logger@4.0.0", "@pnpm/lockfile-file"),
+        ],
+    )
+    def test_v5_peer_suffix_after_underscore(self, key, expected):
+        """A v5 key puts the version after a slash and the peer suffix after an
+        underscore, and that suffix carries an `@digit` of its own. Hunting for
+        the first `@` before a digit therefore read
+        `/react-dom/18.2.0_react@18.2.0` as a package called
+        `react-dom/18.2.0_react` -- 17 false blocks in one repository, on some
+        of the most-installed packages there are.
+
+        The earlier version of this test used `/react-dom@18.2.0_react@18.2.0`,
+        which is the v6 spelling. It passed while the real v5 shape failed.
+        """
+        text = "packages:\n  " + key + ":\n    resolution: {}\n"
+        assert names(parse_pnpm_lock(text)) == [expected]
+
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "e2e-test-dep-plain@file:packages/kit/test/apps/async/_test_dependencies/plain-lib",
+            "'@test/server-entry-fake-adapter@file:packages/astro/test/fixtures/server-entry/fake-adapter'",
+            "'@repo/shared@file:packages/shared'",
+            "server-side-dep@file:packages/adapter-cloudflare/test/apps/pages/server-side-dep",
+            "thing@link:../shared",
+        ],
+    )
+    def test_a_protocol_anywhere_in_the_key(self, key):
+        """v5 writes `/file:packages/ui`; v6 and later write
+        `name@file:packages/ui`. Testing only the start of the key left every
+        modern workspace with local test fixtures looked up on npmjs."""
+        text = "packages:\n  " + key + ":\n    resolution: {}\n"
+        assert names(parse_pnpm_lock(text)) == []
 
     def test_underscores_in_real_names_survive(self):
         """`string_decoder` and `@types/babel__core` are published packages."""
@@ -151,6 +192,13 @@ class TestYarnBerry:
     )
     def test_every_non_registry_protocol_is_skipped(self, descriptor):
         assert names(parse_yarn_lock(f"{descriptor}:\n  version: 1.0.0\n")) == []
+
+    def test_a_v_prefixed_range_is_not_an_alias(self):
+        """Storybook pins `pino-abstract-transport@npm:v1.1.0`. The `v` made the
+        range look like a name, so it was checked as a package called
+        `v1.1.0`."""
+        text = '"pino-abstract-transport@npm:v1.1.0":\n  version: 1.1.0\n'
+        assert names(parse_yarn_lock(text)) == ["pino-abstract-transport"]
 
     def test_metadata_is_not_a_package(self):
         text = "__metadata:\n  version: 6\n  cacheKey: 8\n\nlodash@npm:^4:\n  version: 4.17.21\n"

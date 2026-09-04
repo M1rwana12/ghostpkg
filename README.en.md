@@ -135,8 +135,8 @@ somebody copies the line and runs it — the install has already happened by the
 time that name reaches `requirements.txt`.
 
 Extraction is deliberately narrow, because a README is full of words that look
-like package names. Measured across thirteen real READMEs, it finds the genuine
-names with a **0% false-positive rate**; `pip install -r requirements.txt`,
+like package names. Measured across twenty-two real READMEs it extracted 18
+names, **none of which fail to exist**; `pip install -r requirements.txt`,
 `npm run build`, `pip is a package manager` and `npx create-react-app my-app`
 (where `my-app` is an argument) all yield nothing.
 
@@ -203,7 +203,9 @@ guessed at. Known public mirrors (`registry.yarnpkg.com`,
 
 | Flag | Purpose |
 |---|---|
-| `-e`, `--ecosystem` | `pypi` (default) or `npm` |
+| `-e`, `--ecosystem` | `pypi` (default) or `npm`. `check` only -- `scan` takes the ecosystem from the file |
+| `--format` | `text` (default), `json`, or `github` for diff annotations |
+| `--config PATH` | Ignore file. Never read from the directory being scanned |
 | `--strict` | Promote warnings to blocks |
 | `--json` | Machine-readable output for scripts and CI |
 | `-q`, `--quiet` | Hide packages that passed |
@@ -331,8 +333,8 @@ commands instead, and `--format text` is the default.
 | A pinned version that does not exist | 🔴 **Blocked** | `requests==99.99.99`. A model invents versions as readily as names, and the registry lists every real one, so this is a lookup rather than a heuristic. Only exact pins are checked — a range like `>=2.31` or `^4.18.0` may be satisfied by some other version. |
 | First published < 90 days ago | 🟡 Warning | Attackers register fast. So do honest authors — hence a warning, not a block. |
 | First published < 1 year ago | 🟡 Warning | Weaker version of the same signal. |
-| Only one release | 🟡 Warning | Squats are usually published once and abandoned. |
-| No repository or homepage link | 🟡 Warning | Real projects almost always link to source. |
+| Only one release, **and under a year old** | 🟡 Warning | Squats are usually published once and abandoned. An established package with one release is simply finished, so the age gate is part of the signal rather than a separate row. |
+| No repository or homepage link, **and under a year old** | 🟡 Warning | Real projects almost always link to source. Age-gated for the same reason as the row above. |
 | 1–2 edits from a popular name, **and** the package is either recent **or** abandoned (≤2 releases and no repository link) | 🟡 Warning | Classic typosquat shape. A swap of adjacent characters counts as one edit, because `recat`/`react` is what squatters actually publish. Age alone was the wrong gate: `expresss` has sat on npm since 2016 with one release and ~2,500 typo-driven downloads a month. |
 
 Warnings are advisory by default. Nothing but non-existence blocks unless you pass
@@ -361,9 +363,11 @@ Everything softer is reported for a human to read.
 $ ghostpkg check react-router-dom-utils -e npm
 
   WARNING  react-router-dom-utils
-           - first published 176 days ago
+           - first published 179 days ago (under a year)
            - only one release
            - no repository or homepage link
+
+  1 to review by hand
 ```
 
 When the name does not exist at all, the block comes with the likely intent
@@ -389,7 +393,7 @@ length, and only applies to packages young enough to plausibly be a squat.
 ### In CI
 
 ```yaml
-- uses: M1rwana12/ghostpkg@v0.19.0
+- uses: M1rwana12/ghostpkg@v0.22.0
 ```
 
 That is the whole step. It searches the checkout, skips `node_modules` and
@@ -403,8 +407,11 @@ than leaving the answer in a job log:
 A blocking finding is an error and a soft signal is a warning, so the
 annotations and the exit code agree about severity.
 
-Optional inputs -- `paths`, `strict`, `deep`, `version`, `python-version`,
-`fail-on-error`. Pin `version` if you want the run to be reproducible.
+Optional inputs -- `paths`, `strict`, `deep`, `version`, `install`, `config`,
+`python-version`, `fail-on-error`. Pin `version` for a reproducible run, and
+point `config` at an ignore file kept in the repository (this project uses
+`.github/ghostpkg-ignore.json` for its own scan, so suppressions are reviewed
+in a pull request like any other change).
 
 Or without the action, if you prefer:
 
@@ -417,7 +424,7 @@ Or without the action, if you prefer:
 ```yaml
 repos:
   - repo: https://github.com/M1rwana12/ghostpkg
-    rev: v0.19.0
+    rev: v0.22.0
     hooks:
       - id: ghostpkg
 ```

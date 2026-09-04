@@ -49,6 +49,35 @@ PNPM_LOCAL = ("file:", "link:", "http://", "https://", "git+", "git:")
 PNPM_VERSION_AT = re.compile(r"(?<=.)@(?=\d)")
 
 
+def _pnpm_name(key: str) -> "str | None":
+    """The package name out of a `packages:` key, whichever version wrote it.
+
+        /react-dom/18.2.0_react@18.2.0     v5, version after a slash
+        /react@18.2.0                      v6, version after an @
+        'react@18.2.0'                     v9, the same with quotes
+
+    The shapes are told apart by structure rather than by hunting for the
+    first `@` before a digit. That hunt was wrong for every v5 key carrying a
+    peer suffix, because the suffix contains an `@digit` of its own: it read
+    `/react-dom/18.2.0_react@18.2.0` as a package called
+    `react-dom/18.2.0_react`, and did the same to `eslint-plugin-react` and
+    `@babel/helper-compilation-targets` -- 17 false blocks in one repository,
+    on some of the most-installed packages there are.
+
+    In a v5 key the last slash-separated segment is the version, so it starts
+    with a digit. In a scoped v6 key the last segment is `name@version` and
+    starts with a letter. That single test separates them.
+    """
+    tail = key.rsplit("/", 1)
+    if len(tail) == 2 and tail[1][:1].isdigit() and not key.startswith("@" + tail[1]):
+        return tail[0] or None
+
+    match = PNPM_VERSION_AT.search(key)
+    if match:
+        return key[: match.start()] or None
+    return None
+
+
 def _is_host_path(key: str) -> bool:
     """`github.com/acme/forked/abc123` -- a v5 git dependency, keyed by host.
 
@@ -164,22 +193,20 @@ def parse_pnpm_lock(text: str, source: str | None = None) -> list[Requirement]:
         key = key.split("(", 1)[0]  # v9 peer resolutions
         if key.startswith("/"):
             key = key[1:]
-        # The protocol is only a prefix in v5. From v6 it follows `name@`, so
-        # testing the start of the key never fired and the parser fell through
-        # to its slash split -- emitting names like `github.com/acme/forked`,
-        # which were then looked up on npmjs and blocked.
-        if key.startswith(PNPM_LOCAL) or "://" in key or _is_host_path(key):
+
+        # A protocol can sit anywhere in the key, not only at the front. v5
+        # writes `/file:packages/ui`, v6 and later write
+        # `name@file:packages/ui`, and testing only the start left every
+        # modern workspace with local test fixtures being looked up on npmjs:
+        # `e2e-test-dep-plain@file:...` in SvelteKit, `@test/...-fake-adapter`
+        # in Astro. A `:` cannot appear in a published npm name, so finding
+        # one of these anywhere is decisive.
+        if any(marker in key for marker in PNPM_LOCAL) or "://" in key:
+            continue
+        if _is_host_path(key):
             continue
 
-        match = PNPM_VERSION_AT.search(key)
-        if match:
-            name = key[: match.start()]
-        elif "/" in key.lstrip("@"):
-            # v5 keys the version with a slash: @babel/code-frame/7.12.11
-            name = key.rsplit("/", 1)[0]
-        else:
-            continue
-
+        name = _pnpm_name(key)
         if name and name not in seen:
             seen.add(name)
             found.append(Requirement(name=name, source=source))

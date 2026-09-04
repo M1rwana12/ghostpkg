@@ -107,6 +107,11 @@ def normalise_version(version: str) -> str:
     order versions -- it only decides whether two spellings name one release.
     """
     text = version.strip().lower().lstrip("v")
+    # A local version identifier -- `2.9.0+cu128` -- names a build made
+    # somewhere else. PyPI refuses uploads that carry one, so it can never
+    # appear in a release list, and comparing with it attached blocked every
+    # CUDA-pinned torch line in Ray.
+    text = text.split("+", 1)[0]
     for separator in ("-", "_"):
         text = text.replace(separator, ".")
 

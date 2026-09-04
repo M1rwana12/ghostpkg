@@ -60,6 +60,38 @@ class Requirement:
     constraint: bool = False
 
 
+#: A bare digest -- MD5, SHA-1, SHA-256. Airflow keeps 127 files under
+#: `dev/breeze/doc/images/` whose entire content is one checksum, and five of
+#: them carry `constraints` or `requirements` in the name. A 32-character hex
+#: string is a perfectly legal PEP 508 name, so it was read as a package and
+#: blocked for not existing.
+DIGEST = re.compile(r"^[0-9a-f]{32}$|^[0-9a-f]{40}$|^[0-9a-f]{64}$", re.I)
+
+#: A name that is really a file name. Git materialises a symlink as a plain
+#: file containing its target on a Windows checkout without symlink support, so
+#: Ray's `requirements_compiled_py3.10.txt` held the single line
+#: `requirements_compiled.txt` -- read as a package, and blocked.
+#:
+#: Only the two extensions that requirements files themselves use. A wider list
+#: looked tidier and was wrong: `ruamel.yaml`, `ruamel.yaml.clib` and
+#: `pytest.ini` are all real packages, and rejecting by extension would have
+#: turned a false block into a silent miss on three of them.
+FILE_SUFFIXES = (".txt", ".in")
+
+
+def _is_not_a_package(name: str, specifier: "str | None") -> bool:
+    """Both shapes are a whole line on its own, with no version after it.
+
+    That matters: a package really named like a checksum, pinned to a version,
+    is still a requirement. The guard is for a line that carries nothing but
+    the token -- which is what a checksum file and a materialised symlink both
+    look like.
+    """
+    if specifier:
+        return False
+    return bool(DIGEST.match(name)) or name.lower().endswith(FILE_SUFFIXES)
+
+
 # `name @ https://...` is a direct reference: the source is stated explicitly
 # and is not the public registry, so there is nothing for us to check.
 DIRECT_REFERENCE = re.compile(r"^\s*[A-Za-z0-9][A-Za-z0-9._-]*\s*(\[[^\]]*\])?\s*@\s")
@@ -75,9 +107,12 @@ NPM_LOCAL_PREFIXES = (
     "github:", "gitlab:", "bitbucket:", "gist:",
 )
 
-#: A version range never starts with a letter, which is how `npm:lodash` is
-#: told apart from `npm:^4.17.19`.
+#: A version range never starts with a letter -- except for the `v` some
+#: people write before a number. That exception cost two false blocks in
+#: Storybook's lockfile, where `pino-abstract-transport@npm:v1.1.0` was read as
+#: an alias to a package called `v1.1.0`.
 RANGE_START = "^~><=*0123456789 "
+_V_RANGE = re.compile(r"^v\d")
 
 #: `"dep": "owner/repo"` / `"owner/repo#semver:^1"` is GitHub shorthand. A
 #: version range never contains a slash, so this does not catch one.
@@ -150,7 +185,9 @@ def npm_alias_target(spec: str) -> "str | None":
     at = rest.rfind("@")
     if at > 0:
         return rest[:at]
-    return None if rest[0] in RANGE_START else rest
+    if rest[0] in RANGE_START or _V_RANGE.match(rest):
+        return None
+    return rest
 
 
 def npm_target(name: str, spec: "str | None") -> "str | None":
@@ -220,7 +257,9 @@ def parse_requirements(
             continue
 
         match = NAME.match(line)
-        if match:
+        if match and not _is_not_a_package(
+            match.group(1), _specifier(line[match.end() :])
+        ):
             found.append(
                 Requirement(
                     name=match.group(1),

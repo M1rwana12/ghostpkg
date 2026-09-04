@@ -6,6 +6,59 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-09-04
+
+Four agents scanned **21 repositories and 78,000 package names**. They found
+**51 false blocks** and not one true positive among them, plus twelve places
+where the documentation described a different tool.
+
+### Fixed -- false blocks
+- **pnpm v5 keys with a peer suffix (17 blocks).** `/react-dom/18.2.0_react@18.2.0`
+  was read as a package called `react-dom/18.2.0_react`. The peer suffix carries
+  an `@digit` of its own, so hunting for the first one found the wrong `@`. The
+  version is now located by structure -- in a v5 key the last slash-separated
+  segment starts with a digit -- which also fixed `eslint-plugin-react`,
+  `tsutils` and `@babel/helper-compilation-targets`.
+- **pnpm `name@file:path` keys (8 blocks).** The protocol is only a prefix in
+  v5; from v6 it follows `name@`. A protocol is now looked for anywhere in the
+  key, since a `:` cannot occur in a published npm name.
+- **A yarn `npm:v1.1.0` range (2 blocks).** The leading `v` made a version range
+  look like an alias to a package called `v1.1.0`.
+- **Checksum files read as requirements (5 blocks).** Airflow keeps 127 files
+  whose entire content is one MD5; five carry `constraints` in the name, and a
+  32-character hex string is a legal PEP 508 name.
+- **Materialised symlinks (4 blocks).** Git writes a symlink as a plain file
+  holding its target where the filesystem has no symlink support, so
+  `requirements_compiled_py3.10.txt` contained the line
+  `requirements_compiled.txt` -- read as a package.
+- **PEP 440 local versions (17 blocks).** PyPI refuses an upload carrying one,
+  so `torch==2.9.0+cu128` can never match a release list. Ray pins every CUDA
+  build that way.
+
+The first attempt at the last two rejected any name ending in `.yaml`, `.cfg`
+or `.ini` as well. `ruamel.yaml`, `ruamel.yaml.clib` and `pytest.ini` are all
+real packages, so that would have traded a false block for a silent miss on
+three of them. The guard is now two extensions and only on a line with no
+version.
+
+### Fixed -- flags
+- **`--timeout` now reaches `--deep`**, which downloaded archives on a fixed
+  budget of its own, and **`--timeout 0` is refused** rather than silently
+  ignored.
+
+### Documentation
+Both READMEs stated that **"does not exist" is cached for an hour** and then, 300
+lines later, that negatives are never cached. The second is true; the first
+described the precise failure this tool exists to avoid. Also corrected: `-e`
+does not apply to `scan`; `--format` and `--config` were in no options table;
+"only one release" and "no repository link" are age-gated; the action's
+`install` and `config` inputs were undocumented; the prose measurement was
+stale in English; `data.py` has been per-ecosystem for some time; and the CI and
+pre-commit snippets pinned a version whose own changelog records a false
+all-clear.
+
+656 tests. Field gate: 4,461 packages, zero blocks.
+
 ## [0.21.0] - 2026-09-04
 
 Three more false blocks, all found by a new release gate that scans large real
@@ -849,7 +902,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.22.0
 [0.21.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.21.0
 [0.20.0]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.20.0
 [0.19.3]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.19.3
