@@ -32,6 +32,7 @@ Language models invent library names. Attackers register those names in advance.
 - [Why it doesn't block on "suspicious"](#why-it-doesnt-block-on-suspicious)
 - [Where it fits in your workflow](#where-it-fits-in-your-workflow)
 - [How it works internally](#how-it-works-internally)
+- [The release gate](#the-release-gate)
 - [Measured, and not built](#measured-and-not-built)
 - [Comparison](#comparison)
 - [Honest limitations](#honest-limitations)
@@ -397,7 +398,7 @@ length, and only applies to packages young enough to plausibly be a squat.
 ### In CI
 
 ```yaml
-- uses: M1rwana12/ghostpkg@v0.24.4
+- uses: M1rwana12/ghostpkg@v0.24.5
 ```
 
 That is the whole step. It searches the checkout, skips `node_modules` and
@@ -428,7 +429,7 @@ Or without the action, if you prefer:
 ```yaml
 repos:
   - repo: https://github.com/M1rwana12/ghostpkg
-    rev: v0.24.4
+    rev: v0.24.5
     hooks:
       - id: ghostpkg
 ```
@@ -560,6 +561,36 @@ idea of the set: it would have *removed* warnings rather than adding signals.
 It failed on the logic, not the numbers — an attestation proves **provenance,
 not benevolence**. An attacker can publish a slopsquat through Trusted
 Publishing from their own repository just as easily.
+
+---
+
+## The release gate
+
+Unit tests check the shapes somebody already thought of. A real monorepo
+contains the ones nobody did, and the difference is not small: 605 tests and a
+35-check acceptance pass once missed eleven defects that a single pass over
+three popular repositories found immediately.
+
+So `scripts/fieldtest.py` clones sixteen real repositories, scans each, and
+fails on any block not listed with a reason. Every name in those projects is a
+dependency thousands of people install every day, so **every block is a false
+positive until shown otherwise**.
+
+The most recent full run:
+
+| | |
+|---|---|
+| Packages checked | **88,904** |
+| Repositories | 16 |
+| Blocks reported | **6** |
+| Blocks that were real | **6** |
+
+The six: `jaxlib==0.4.17` and `tensorflow-macos==2.20.0` in Ray, both pinned to
+versions PyPI does not carry, and `tsconfig-mod`, which next.js references and
+nobody published. Each was checked against the registry by hand and is recorded
+in the script beside its reason.
+
+It runs nightly in CI, and on any push that touches the scanner.
 
 ---
 

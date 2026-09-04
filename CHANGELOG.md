@@ -6,6 +6,23 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.24.5] - 2026-09-04
+
+### Documentation
+- **The Ukrainian README is the repository landing page, and it was the weaker
+  of the two** -- 36% shorter, missing six things the English page had: a
+  contents list, the exit-code table, the `GP001`-`GP011` rule ids, the
+  `--json` example, the `--deep` signal table, and the walk through the
+  internals. All six are now there, so the page most visitors see first is no
+  longer the thinner one.
+- **Both READMEs now describe the release gate**, which is the strongest
+  evidence the project has and appeared in neither: sixteen real repositories,
+  **88,904 packages checked, six blocks, all six real**. Every name in those
+  projects is a dependency thousands of people install daily, so every block is
+  treated as a false positive until shown otherwise.
+
+711 tests.
+
 ## [0.24.4] - 2026-09-04
 
 ### Changed
@@ -1046,7 +1063,8 @@ First release.
 - No corpus of hallucinated package names is shipped, following the decision of
   the USENIX'25 authors not to publish theirs.
 
-[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.24.4...HEAD
+[Unreleased]: https://github.com/M1rwana12/ghostpkg/compare/v0.24.5...HEAD
+[0.24.5]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.24.5
 [0.24.4]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.24.4
 [0.24.3]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.24.3
 [0.24.2]: https://github.com/M1rwana12/ghostpkg/releases/tag/v0.24.2
